@@ -106,6 +106,9 @@ def train_PNModel(dataCenter, features, args, device):
 
     elif encoder == "Multi_GAT":
         encoder_model = multi_layer_GAT(num_of_comunities , latent_dim=num_of_comunities, layers=encoder_layers)
+        
+    elif encoder == "Multi_RelGraphConv":
+        encoder_model = multi_layer_RelGraphConv(num_of_comunities , latent_dim=num_of_comunities, layers=encoder_layers)
 
     elif encoder == "mixture_of_GCNs":
         encoder_model = mixture_of_GCNs(in_feature=features.shape[1], num_relation=num_of_relations,

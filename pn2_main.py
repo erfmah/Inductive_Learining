@@ -24,6 +24,7 @@ from dgl.nn.pytorch import GraphConv as GraphConv
 import copy
 from dataCenter import *
 from utils import *
+#from graph_samplers import *
 from models import *
 import plotter as plotter
 import graph_statistics as GS
@@ -50,7 +51,7 @@ parser.add_argument('-num_node', dest="num_node", default=-1, type=str,
 parser.add_argument('--config', type=str, default='experiments.conf')
 parser.add_argument('-decoder_type', dest="decoder_type", default="ML_SBM",
                     help="the decoder type, Either SBM or InnerDot  or TransE or MapedInnerProduct_SBM or multi_inner_product and TransX or SBM_REL")
-parser.add_argument('-encoder_type', dest="encoder_type", default="Multi_GCN",
+parser.add_argument('-encoder_type', dest="encoder_type", default="Multi_RelGraphConv",
                     help="the encoder type, Either ,mixture_of_GCNs, mixture_of_GatedGCNs , Multi_GCN or Edge_GCN ")
 parser.add_argument('-f', dest="use_feature", default=True, help="either use features or identity matrix")
 parser.add_argument('-NofRels', dest="num_of_relations", default=1,
@@ -245,10 +246,10 @@ for i in sample_list:
     adj_list_copy = copy.deepcopy(org_adj)
     neigbour_prob_single = 1
     if single_link:
-
+        print(idd, neighbour_id)
         adj_list_copy = copy.deepcopy(org_adj)
-        adj_list_copy[idd, neighbour_id] = 0  # find a test edge and set it to 0
-        adj_list_copy[neighbour_id, idd] = 0  # find a test edge and set it to 0
+        adj_list_copy[idd, neighbour_id] = 2  # find a test edge and set it to 0
+        adj_list_copy[neighbour_id, idd] = 2  # find a test edge and set it to 0
 
         targets.append(idd)
         targets.append(neighbour_id)

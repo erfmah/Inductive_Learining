@@ -7,6 +7,8 @@ import torch.nn.functional as F
 from utils import *
 from dgl.nn.pytorch import GraphConv as GraphConv
 from dgl.nn.pytorch import GATConv as GATConv
+from dgl.nn import GINEConv
+from dgl.nn import RelGraphConv
 from torch.autograd import Variable
 from torch.nn import init
 import time
@@ -539,6 +541,86 @@ class multi_layer_GAT(torch.nn.Module):
 
         z = self.reparameterize(m_q_z_flatten, std_q_z_flatten)
         return z, m_q_z_flatten, std_q_z_flatten
+
+    def reparameterize(self, mean, std):
+        eps = torch.randn_like(std)
+        return eps.mul(std).add(mean)
+
+
+
+
+class multi_layer_GINE(torch.nn.Module):
+    def __init__(self, in_feature, latent_dim=32, layers=[64]):
+        """
+        :param in_feature: the size of input feature; X.shape()[1]
+        :param latent_dim: the dimention of each embedded node; |z| or len(z)
+        :param layers: a list in which each element determine the size of corresponding GCNN Layer.
+        """
+        super(multi_layer_GINE, self).__init__()
+        layers = [in_feature] + layers
+        if len(layers) < 1: raise Exception("sorry, you need at least two layer")
+        self.ConvLayers = torch.nn.ModuleList(
+            GINEConv(nn.Linear(layers[i], layers[i + 1])) for i in
+            range(len(layers) - 1))
+
+        self.q_z_mean = GraphConv(nn.Linear(layers[-1], latent_dim))
+
+        self.q_z_std = GraphConv(nn.Linear(layers[-1], latent_dim))
+
+    def forward(self, adj, x):
+        src, dst = np.nonzero(adj)
+        g = dgl.graph((src, dst))
+        
+        
+        dropout = torch.nn.Dropout(0)
+        for conv_layer in self.ConvLayers:
+            x = torch.tanh(conv_layer(adj, x))
+            x = dropout(x)
+
+        m_q_z = self.q_z_mean(adj, x)
+        std_q_z = torch.relu(self.q_z_std(adj, x)) + .0001
+
+        z = self.reparameterize(m_q_z, std_q_z)
+        return z, m_q_z, std_q_z,
+
+    def reparameterize(self, mean, std):
+        eps = torch.randn_like(std)
+        return eps.mul(std).add(mean)
+
+class multi_layer_RelGraphConv(torch.nn.Module):
+    def __init__(self, in_feature, latent_dim=32, layers=[64]):
+        """
+        :param in_feature: the size of input feature; X.shape()[1]
+        :param latent_dim: the dimention of each embedded node; |z| or len(z)
+        :param layers: a list in which each element determine the size of corresponding GCNN Layer.
+        """
+        super(multi_layer_RelGraphConv, self).__init__()
+        layers = [in_feature] + layers
+        if len(layers) < 1: raise Exception("sorry, you need at least two layer")
+        self.ConvLayers = torch.nn.ModuleList(
+            RelGraphConv(layers[i], layers[i + 1], 2, bias=False) for i in
+            range(len(layers) - 1))
+
+        self.q_z_mean = RelGraphConv(layers[-1], latent_dim, 2, bias=False)
+
+        self.q_z_std = RelGraphConv(layers[-1], latent_dim, 2, bias=False)
+
+    def forward(self, adj, x):
+        #src, dst = np.nonzero(adj)
+        #g = dgl.graph((src, dst))
+        g = adj
+        e_type = adj.etypes
+        
+        dropout = torch.nn.Dropout(0)
+        for conv_layer in self.ConvLayers:
+            x = torch.tanh(conv_layer(g, x,e_type))
+            x = dropout(x)
+
+        m_q_z = self.q_z_mean(g, x,e_type)
+        std_q_z = torch.relu(self.q_z_std(g, x,e_type)) + .0001
+
+        z = self.reparameterize(m_q_z, std_q_z)
+        return z, m_q_z, std_q_z,
 
     def reparameterize(self, mean, std):
         eps = torch.randn_like(std)
