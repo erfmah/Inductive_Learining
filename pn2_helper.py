@@ -179,17 +179,42 @@ def train_PNModel(dataCenter, features, args, device):
     
     
     adj_train = sp.csr_matrix(adj_train)
+    adj_train = torch.tensor(adj_train.todense())  # use sparse man
+    adj_train_org = copy.deepcopy(adj_train)
+    for i in range(adj_train.shape[0]):
+        adj_train[i,i] = 1
+    ones = (adj_train == 1).nonzero(as_tuple=False)
+    twos = (adj_train == 2).nonzero(as_tuple=False)
+    zeros = (adj_train == 0).nonzero(as_tuple=False)
+    masked_1 = random.sample(range(0, len(ones)), int(10/100*adj_train.shape[0]))
+    masked_0 = random.sample(range(0, len(zeros)), int(10/100*adj_train.shape[0]))
+    # twos = torch.cat((twos, ones[masked_1]))
+    # twos = torch.cat((twos, zeros[masked_0]))
+    adj_train[ones[masked_1][:,0],ones[masked_1][:,1]]=2
+    adj_train[zeros[masked_0][:,0],zeros[masked_0][:,1]]=2
+    # non_zero = adj_train.nonzero()
+    # src = non_zero[:,0]
+    # dst = non_zero[:,1]
+    ones = (adj_train == 1).nonzero(as_tuple=False)
+    twos = (adj_train == 2).nonzero(as_tuple=False)
+    zeros = (adj_train == 0).nonzero(as_tuple=False)
+    src_1 = ones[:,0]
+    dst_1 = ones[:,1]
+    src_2 = twos[:,0]
+    dst_2 = twos[:,1]
+    dict_edges = {('node', 1, 'node'):(src_1,dst_1), ('node', 2, 'node'):(src_2,dst_2)}
+    graph_dgl = dgl.heterograph(dict_edges)
     
-    graph_dgl = dgl.from_scipy(adj_train)
+    # graph_dgl = dgl.from_scipy(adj_train)
 
     # origianl_graph_statistics = GS.compute_graph_statistics(np.array(adj_train.todense()) + np.identity(adj_train.shape[0]))
     
-    graph_dgl.add_edges(graph_dgl.nodes(), graph_dgl.nodes())  # the library does not add self-loops
+    #graph_dgl.add_edges(graph_dgl.nodes(), graph_dgl.nodes())  # the library does not add self-loops
     
-    num_nodes = graph_dgl.number_of_dst_nodes()
-    adj_train = torch.tensor(adj_train.todense())  # use sparse man
+    #num_nodes = graph_dgl.number_of_dst_nodes()
+    # adj_train = torch.tensor(adj_train.todense())  # use sparse man
    
-    
+    num_nodes = adj_train.shape[0]
     
         
     if (type(feat_train) == np.ndarray):
@@ -244,8 +269,11 @@ def train_PNModel(dataCenter, features, args, device):
         # forward propagation by using all nodes
         std_z, m_z, z, reconstructed_adj = model(graph_dgl, feat_train , targets, sampling_method, is_prior, train=True)
         # compute loss and accuracy
+        # z_kl, reconstruction_loss, acc, val_recons_loss = optimizer_VAE_pn(reconstructed_adj,
+        #                                                                adj_train_org,
+        #                                                                std_z, m_z, num_nodes, pos_wight, norm)
         z_kl, reconstruction_loss, acc, val_recons_loss = optimizer_VAE_pn(reconstructed_adj,
-                                                                       adj_train + sp.eye(adj_train.shape[0]).todense(),
+                                                                       adj_train_org,
                                                                        std_z, m_z, num_nodes, pos_wight, norm)
         loss = reconstruction_loss + z_kl
     

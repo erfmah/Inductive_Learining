@@ -1056,9 +1056,24 @@ def get_metrices(test_edges, org_adj, re_adj):
 
 
 def run_network(feats, adj, model, targets, sampling_method, is_prior):
-    adj = sparse.csr_matrix(adj)
-    graph_dgl = dgl.from_scipy(adj)
-    graph_dgl.add_edges(graph_dgl.nodes(), graph_dgl.nodes())  # the library does not add self-loops  
+    # adj = sparse.csr_matrix(adj)
+    # graph_dgl = dgl.from_scipy(adj)
+    # graph_dgl.add_edges(graph_dgl.nodes(), graph_dgl.nodes())  # the library does not add self-loops  
+    adj = sp.csr_matrix(adj)
+    adj = torch.tensor(adj.todense())  # use sparse man
+    for i in range(adj.shape[0]):
+        adj[i,i] = 1
+    ones = (adj == 1).nonzero(as_tuple=False)
+    twos = (adj == 2).nonzero(as_tuple=False)
+    non_zero = adj.nonzero()
+    src = non_zero[:,0]
+    dst = non_zero[:,1]
+    src_1 = ones[:,0]
+    dst_1 = ones[:,1]
+    src_2 = twos[:,0]
+    dst_2 = twos[:,1]
+    dict_edges = {('node', 1, 'node'):(src_1,dst_1), ('node', 2, 'node'):(src_2,dst_2)}
+    graph_dgl = dgl.heterograph(dict_edges)
     std_z, m_z, z, re_adj = model(graph_dgl, feats, targets, sampling_method, is_prior, train=False)
     return std_z, m_z, z, re_adj
 
@@ -1067,6 +1082,7 @@ def run_link_encoder_decoder(z_prior, adj, model):
     adj = sparse.csr_matrix(adj)
     graph_dgl = dgl.from_scipy(adj)
     graph_dgl.add_edges(graph_dgl.nodes(), graph_dgl.nodes())  # the library does not add self-loops  
+    
     z, m_z, std_z = model.inference(graph_dgl, z_prior)  # recognition
     re_adj = model.generator(z)
     return std_z, m_z, z, re_adj

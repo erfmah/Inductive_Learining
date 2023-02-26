@@ -608,8 +608,16 @@ class multi_layer_RelGraphConv(torch.nn.Module):
     def forward(self, adj, x):
         #src, dst = np.nonzero(adj)
         #g = dgl.graph((src, dst))
-        g = adj
-        e_type = adj.etypes
+        #g = adj
+        e_type = torch.Tensor(adj.etypes)
+        
+        edges_1 = torch.stack(list(adj.edges(etype=e_type[0].item())))
+        edges_2 = torch.stack(list(adj.edges(etype=e_type[1].item())))
+        src = torch.cat((edges_1[0], edges_2[0]))
+        dst = torch.cat((edges_1[1], edges_2[1]))  
+        g = dgl.graph((src,dst))
+        e_list = [1]*edges_1.shape[1] + [2]*edges_2.shape[1]
+        e_type = torch.tensor(e_list)
         
         dropout = torch.nn.Dropout(0)
         for conv_layer in self.ConvLayers:
@@ -617,7 +625,7 @@ class multi_layer_RelGraphConv(torch.nn.Module):
             x = dropout(x)
 
         m_q_z = self.q_z_mean(g, x,e_type)
-        std_q_z = torch.relu(self.q_z_std(g, x,e_type)) + .0001
+        std_q_z = torch.relu(self.q_z_std(g, x, e_type)) + .0001
 
         z = self.reparameterize(m_q_z, std_q_z)
         return z, m_q_z, std_q_z,
@@ -627,6 +635,122 @@ class multi_layer_RelGraphConv(torch.nn.Module):
         return eps.mul(std).add(mean)
 
 
+# ------------------------------------------------------------------
+# Edge-enabled encoder
+
+class edge_enabled_GCN(torch.nn.Module):
+    def __init__(self, in_feature, latent_dim=32, layers=[64]):
+        """
+        :param in_feature: the size of input feature; X.shape()[1]
+        :param latent_dim: the dimention of each embedded node; |z| or len(z)
+        :param layers: a list in which each element determine the siae of corresponding GCNN Layer.
+        """
+        super(edge_enabled_GCN, self).__init__()
+        layers = [in_feature] + layers
+        ordered = False
+        if len(layers) < 1: raise Exception("Sorry, you need at least two layer")
+        self.ConvLayers = torch.nn.ModuleList(
+            GraphConv(layers[i], layers[i + 1], activation=None, bias=False, weight=True) for i in
+            range(len(layers) - 1))
+
+        self.q_z_mean = GraphConv(layers[-1], latent_dim, activation=None, bias=False, weight=True)
+        self.q_z_std = GraphConv(layers[-1], latent_dim, activation=None, bias=False, weight=True)
+
+        # layers
+        # asakhuja Start Adding function for creating similarity/dissimilarity value for nodes
+        if ordered == True:
+            layer_list = OrderedDict()
+            for l in range(len(self.num_features_list)):
+                # set layer
+                layer_list['conv{}'.format(l)] = nn.Conv2d(
+                    in_channels=self.num_features_list[l - 1] if l > 0 else self.in_features,
+                    out_channels=self.num_features_list[l],
+                    kernel_size=1,
+                    bias=False)
+                layer_list['norm{}'.format(l)] = nn.BatchNorm2d(num_features=self.num_features_list[l],
+                                                                )
+                layer_list['relu{}'.format(l)] = nn.LeakyReLU()
+
+                if self.dropout > 0:
+                    layer_list['drop{}'.format(l)] = nn.Dropout2d(p=self.dropout)
+
+                layer_list['conv_out'] = nn.Conv2d(in_channels=self.num_features_list[-1],
+                                                   out_channels=1,
+                                                   kernel_size=1)
+                self.sim_network = nn.Sequential(layer_list)
+
+                if self.separate_dissimilarity:
+                    # layers
+                    layer_list = OrderedDict()
+                for l in range(len(self.num_features_list)):
+                    # set layer
+                    layer_list['conv{}'.format(l)] = nn.Conv2d(
+                        in_channels=self.num_features_list[l - 1] if l > 0 else self.in_features,
+                        out_channels=self.num_features_list[l],
+                        kernel_size=1,
+                        bias=False)
+                    layer_list['norm{}'.format(l)] = nn.BatchNorm2d(num_features=self.num_features_list[l],
+                                                                    )
+                    layer_list['relu{}'.format(l)] = nn.LeakyReLU()
+
+                    if self.dropout > 0:
+                        layer_list['drop{}'.format(l)] = nn.Dropout(p=self.dropout)
+
+                    layer_list['conv_out'] = nn.Conv2d(in_channels=self.num_features_list[-1],
+                                                       out_channels=1,
+                                                       kernel_size=1)
+                    self.dsim_network = nn.Sequential(layer_list)
+
+                    def crossloop(self, node_feat, edge_feat):
+                        # compute abs(x_i, x_j)
+                        x_i = node_feat.unsqueeze(2)
+                        x_j = torch.transpose(x_i, 1, 2)
+                        x_ij = torch.abs(x_i - x_j)
+                        x_ij = torch.transpose(x_ij, 1, 3)
+
+                        # compute similarity/dissimilarity (batch_size x feat_size x num_samples x num_samples)
+                        sim_val = F.sigmoid(self.sim_network(x_ij))
+
+                        if self.separate_dissimilarity:
+                            dsim_val = F.sigmoid(self.dsim_network(x_ij))
+                        else:
+                            dsim_val = 1.0 - sim_val
+
+                        diag_mask = 1.0 - torch.eye(node_feat.size(1)).unsqueeze(0).unsqueeze(0).repeat(
+                            node_feat.size(0), 2, 1, 1).to(tt.arg.device)
+                        edge_feat = edge_feat * diag_mask
+                        merge_sum = torch.sum(edge_feat, -1, True)
+                        # set diagonal as zero and normalize
+                        edge_feat = F.normalize(torch.cat([sim_val, dsim_val], 1) * edge_feat, p=1, dim=-1) * merge_sum
+                        force_edge_feat = torch.cat((torch.eye(node_feat.size(1)).unsqueeze(0),
+                                                     torch.zeros(node_feat.size(1), node_feat.size(1)).unsqueeze(0)),
+                                                    0).unsqueeze(0).repeat(node_feat.size(0), 1, 1, 1).to(tt.arg.device)
+                        edge_feat = edge_feat + force_edge_feat
+                        edge_feat = edge_feat + 1e-6
+                        edge_feat = edge_feat / torch.sum(edge_feat, dim=1).unsqueeze(1).repeat(1, 2, 1, 1)
+
+                        return edge_feat
+
+    def forward(self, adj, x):
+        # asakhuja Start - Calling message passing and aggregator function for node latents
+        for conv_layer in self.ConvLayers:
+            x = torch.tanh(conv_layer(adj, x))
+
+        # h1 = self.dropout(h1)
+        m_q_z = self.q_z_mean(adj, x)
+        std_q_z = torch.relu(self.q_z_std(adj, x)) + .0001
+        z = self.reparameterize(m_q_z, std_q_z)
+        # edge_feat = torch.rand(x.shape[0], x.shape[0],2)
+        edge_feat = torch.rand(x.shape[0], x.shape[0], 2)
+        return z, m_q_z, std_q_z, edge_feat
+
+    def reparameterize(self, mean, std):
+        eps = torch.randn_like(std)
+        return eps.mul(std).add(mean)
+
+        # asakhuja End
+
+# asakhuja End
 
 from utils import *
 
