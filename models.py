@@ -9,6 +9,7 @@ from dgl.nn.pytorch import GraphConv as GraphConv
 from dgl.nn.pytorch import GATConv as GATConv
 from dgl.nn import GINEConv
 from dgl.nn import RelGraphConv
+from dgl.nn import GatedGraphConv
 from torch.autograd import Variable
 from torch.nn import init
 import time
@@ -568,17 +569,24 @@ class multi_layer_GINE(torch.nn.Module):
         self.q_z_std = GraphConv(nn.Linear(layers[-1], latent_dim))
 
     def forward(self, adj, x):
-        src, dst = np.nonzero(adj)
-        g = dgl.graph((src, dst))
+
+        e_type = torch.Tensor(adj.etypes)
         
+        edges_1 = torch.stack(list(adj.edges(etype=e_type[0].item())))
+        edges_2 = torch.stack(list(adj.edges(etype=e_type[1].item())))
+        src = torch.cat((edges_1[0], edges_2[0]))
+        dst = torch.cat((edges_1[1], edges_2[1]))  
+        g = dgl.graph((src,dst))
+        e_list = [1]*edges_1.shape[1] + [2]*edges_2.shape[1]
+        e_type = torch.tensor(e_list)
         
         dropout = torch.nn.Dropout(0)
         for conv_layer in self.ConvLayers:
-            x = torch.tanh(conv_layer(adj, x))
+            x = torch.tanh(conv_layer(g, x, e_type))
             x = dropout(x)
 
-        m_q_z = self.q_z_mean(adj, x)
-        std_q_z = torch.relu(self.q_z_std(adj, x)) + .0001
+        m_q_z = self.q_z_mean(g, x,e_type)
+        std_q_z = torch.relu(self.q_z_std(g, x, e_type)) + .0001
 
         z = self.reparameterize(m_q_z, std_q_z)
         return z, m_q_z, std_q_z,
@@ -621,7 +629,7 @@ class multi_layer_RelGraphConv(torch.nn.Module):
         
         dropout = torch.nn.Dropout(0)
         for conv_layer in self.ConvLayers:
-            x = torch.tanh(conv_layer(g, x,e_type))
+            x = torch.tanh(conv_layer(g, x, e_type))
             x = dropout(x)
 
         m_q_z = self.q_z_mean(g, x,e_type)
@@ -634,9 +642,52 @@ class multi_layer_RelGraphConv(torch.nn.Module):
         eps = torch.randn_like(std)
         return eps.mul(std).add(mean)
 
+class multi_layer_GatedGraphConv(torch.nn.Module):
+    def __init__(self, in_feature, latent_dim=32, layers=[64]):
+        """
+        :param in_feature: the size of input feature; X.shape()[1]
+        :param latent_dim: the dimention of each embedded node; |z| or len(z)
+        :param layers: a list in which each element determine the size of corresponding GCNN Layer.
+        """
+        super(multi_layer_GatedGraphConv, self).__init__()
+        layers = [in_feature] + layers
+        if len(layers) < 1: raise Exception("sorry, you need at least two layer")
+        self.ConvLayers = torch.nn.ModuleList(
+            GatedGraphConv(layers[i], latent_dim, 2, 2) for i in
+            range(len(layers) - 1))
 
-# ------------------------------------------------------------------
-# Edge-enabled encoder
+        self.q_z_mean = GatedGraphConv(latent_dim, latent_dim, 2, 2)
+
+        self.q_z_std = GatedGraphConv(latent_dim, latent_dim, 2, 2)
+
+    def forward(self, adj, x):
+        #src, dst = np.nonzero(adj)
+        #g = dgl.graph((src, dst))
+        #g = adj
+        e_type = torch.Tensor(adj.etypes)
+        
+        edges_1 = torch.stack(list(adj.edges(etype=e_type[0].item())))
+        edges_2 = torch.stack(list(adj.edges(etype=e_type[1].item())))
+        src = torch.cat((edges_1[0], edges_2[0]))
+        dst = torch.cat((edges_1[1], edges_2[1]))  
+        g = dgl.graph((src,dst))
+        e_list = [0]*edges_1.shape[1] + [1]*edges_2.shape[1]
+        e_type = torch.tensor(e_list)
+        
+        dropout = torch.nn.Dropout(0)
+        for conv_layer in self.ConvLayers:
+            x = torch.tanh(conv_layer(g, x, e_type))
+            x = dropout(x)
+
+        m_q_z = self.q_z_mean(g, x, e_type)
+        std_q_z = torch.relu(self.q_z_std(g, x, e_type)) + .0001
+
+        z = self.reparameterize(m_q_z, std_q_z)
+        return z, m_q_z, std_q_z,
+
+    def reparameterize(self, mean, std):
+        eps = torch.randn_like(std)
+        return eps.mul(std).add(mean)
 
 class edge_enabled_GCN(torch.nn.Module):
     def __init__(self, in_feature, latent_dim=32, layers=[64]):

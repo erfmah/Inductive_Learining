@@ -684,6 +684,24 @@ def optimizer_VAE_pn(pred, labels, std_z, mean_z, num_nodes, pos_wight, norm):
     acc = (torch.sigmoid(pred).round() == labels).sum() / float(pred.shape[0] * pred.shape[1])
     return z_kl, posterior_cost, acc, val_poterior_cost
 
+def optimizer_VAE_em(mask, pred, labels, std_z, mean_z, num_nodes, pos_wight, norm):
+    val_poterior_cost = 0
+    
+    alpha  = 0.5
+    not_masked = torch.ones(mask.shape[0], mask.shape[1])-mask
+    pos_wight_masked = torch.true_divide((labels.shape[0] ** 2 - torch.sum(labels*mask)), torch.sum(
+        labels*mask))
+    pos_wight_not_masked = torch.true_divide((labels.shape[0] ** 2 - torch.sum(labels*not_masked)), torch.sum(
+        labels*not_masked))
+    posterior_cost_masked = norm * F.binary_cross_entropy_with_logits(pred*mask, labels*mask, pos_weight=pos_wight_masked)
+    posterior_cost_not_masked = norm * F.binary_cross_entropy_with_logits(pred*not_masked, labels*not_masked, pos_weight=pos_wight_not_masked)
+    posterior_cost = alpha * posterior_cost_masked + (1-alpha) * posterior_cost_not_masked
+    
+    z_kl = (-0.5 / num_nodes) * torch.mean(torch.sum(1 + 2 * torch.log(std_z) - mean_z.pow(2) - (std_z).pow(2), dim=1))
+
+    acc = (torch.sigmoid(pred).round() == labels).sum() / float(pred.shape[0] * pred.shape[1])
+    return z_kl, posterior_cost, acc, val_poterior_cost
+    
 
 def roc_auc_estimator(target_edges, reconstructed_adj, origianl_agjacency):
     prediction = []
@@ -1077,6 +1095,18 @@ def run_network(feats, adj, model, targets, sampling_method, is_prior):
     std_z, m_z, z, re_adj = model(graph_dgl, feats, targets, sampling_method, is_prior, train=False)
     return std_z, m_z, z, re_adj
 
+def make_graph(adj):
+    ones = (adj == 1).nonzero(as_tuple=False)
+    twos = (adj == 2).nonzero(as_tuple=False)
+    ones = (adj == 1).nonzero(as_tuple=False)
+    twos = (adj == 2).nonzero(as_tuple=False)
+    src_1 = ones[:,0]
+    dst_1 = ones[:,1]
+    src_2 = twos[:,0]
+    dst_2 = twos[:,1]
+    dict_edges = {('node', 1, 'node'):(src_1,dst_1), ('node', 2, 'node'):(src_2,dst_2)}
+    graph_dgl = dgl.heterograph(dict_edges)
+    return graph_dgl
 
 def run_link_encoder_decoder(z_prior, adj, model):
     adj = sparse.csr_matrix(adj)

@@ -109,6 +109,9 @@ def train_PNModel(dataCenter, features, args, device):
         
     elif encoder == "Multi_RelGraphConv":
         encoder_model = multi_layer_RelGraphConv(num_of_comunities , latent_dim=num_of_comunities, layers=encoder_layers)
+    
+    elif encoder == "Multi_GatedGraphConv":
+        encoder_model = multi_layer_GatedGraphConv(num_of_comunities , latent_dim=num_of_comunities, layers=encoder_layers)
 
     elif encoder == "mixture_of_GCNs":
         encoder_model = mixture_of_GCNs(in_feature=features.shape[1], num_relation=num_of_relations,
@@ -186,12 +189,20 @@ def train_PNModel(dataCenter, features, args, device):
     ones = (adj_train == 1).nonzero(as_tuple=False)
     twos = (adj_train == 2).nonzero(as_tuple=False)
     zeros = (adj_train == 0).nonzero(as_tuple=False)
-    masked_1 = random.sample(range(0, len(ones)), int(10/100*adj_train.shape[0]))
-    masked_0 = random.sample(range(0, len(zeros)), int(10/100*adj_train.shape[0]))
+    masked_1 = random.sample(range(0, len(ones)), int(15/100*len(ones)))
+    masked_0 = random.sample(range(0, len(zeros)), int(15/100*len(ones)))
+    masked_1_random = random.sample(masked_1, int(10/100*len(masked_1)))
+    masked_0_random = random.sample(masked_0, int(10/100*len(masked_0)))
+    
+    mask = torch.zeros(adj_train.shape[0],adj_train.shape[0])
+    mask[ones[masked_1][:,0],ones[masked_1][:,1]]=1
+    mask[zeros[masked_0][:,0],zeros[masked_0][:,1]]=1
     # twos = torch.cat((twos, ones[masked_1]))
     # twos = torch.cat((twos, zeros[masked_0]))
     adj_train[ones[masked_1][:,0],ones[masked_1][:,1]]=2
     adj_train[zeros[masked_0][:,0],zeros[masked_0][:,1]]=2
+    adj_train[ones[masked_1_random][:,0],ones[masked_1_random][:,1]]=0
+    adj_train[zeros[masked_0_random][:,0],zeros[masked_0_random][:,1]]=1
     # non_zero = adj_train.nonzero()
     # src = non_zero[:,0]
     # dst = non_zero[:,1]
@@ -215,8 +226,8 @@ def train_PNModel(dataCenter, features, args, device):
     # adj_train = torch.tensor(adj_train.todense())  # use sparse man
    
     num_nodes = adj_train.shape[0]
-    
-        
+
+       
     if (type(feat_train) == np.ndarray):
         feat_train = torch.tensor(feat_train, dtype=torch.float32)
     else:
@@ -257,14 +268,14 @@ def train_PNModel(dataCenter, features, args, device):
 
     optimizer = torch.optim.Adam(model.parameters(), lr)
     
-    pos_wight = torch.true_divide((adj_train.shape[0] ** 2 - torch.sum(adj_train)), torch.sum(
-        adj_train))  # addrressing imbalance data problem: ratio between positve to negative instance
+    pos_wight = torch.true_divide((adj_train_org.shape[0] ** 2 - torch.sum(adj_train_org)), torch.sum(
+        adj_train_org))  # addrressing imbalance data problem: ratio between positve to negative instance
     # pos_wight = torch.tensor(1)
-    norm = torch.true_divide(adj_train.shape[0] * adj_train.shape[0],
-                             ((adj_train.shape[0] * adj_train.shape[0] - torch.sum(adj_train)) * 2))
+    norm = torch.true_divide(adj_train_org.shape[0] * adj_train_org.shape[0],
+                             ((adj_train_org.shape[0] * adj_train_org.shape[0] - torch.sum(adj_train_org)) * 2))
 
     for epoch in range(epoch_number):
-        # print(epoch)
+# print(epoch)
         model.train()
         # forward propagation by using all nodes
         std_z, m_z, z, reconstructed_adj = model(graph_dgl, feat_train , targets, sampling_method, is_prior, train=True)
@@ -273,8 +284,11 @@ def train_PNModel(dataCenter, features, args, device):
         #                                                                adj_train_org,
         #                                                                std_z, m_z, num_nodes, pos_wight, norm)
         z_kl, reconstruction_loss, acc, val_recons_loss = optimizer_VAE_pn(reconstructed_adj,
-                                                                       adj_train_org,
-                                                                       std_z, m_z, num_nodes, pos_wight, norm)
+                                                                        adj_train_org,
+                                                                        std_z, m_z, num_nodes, pos_wight, norm)
+        # z_kl, reconstruction_loss, acc, val_recons_loss = optimizer_VAE_em(mask, reconstructed_adj,
+        #                                                                adj_train_org,
+        #                                                                std_z, m_z, num_nodes, pos_wight, norm)
         loss = reconstruction_loss + z_kl
     
 
