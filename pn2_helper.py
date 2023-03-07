@@ -57,6 +57,7 @@ def train_PNModel(dataCenter, features, args, device):
     sampling_method = args.sampling_method
     pltr = plotter.Plotter(functions=["loss",  "Accuracy", "Recons Loss", "KL", "AUC"]) 
     synthesis_graphs = {"grid", "community", "lobster", "ego"}
+    alpha = args.alpha
     
     ds = args.dataSet
     if ds in synthesis_graphs:
@@ -183,16 +184,20 @@ def train_PNModel(dataCenter, features, args, device):
     
     adj_train = sp.csr_matrix(adj_train)
     adj_train = torch.tensor(adj_train.todense())  # use sparse man
-    adj_train_org = copy.deepcopy(adj_train)
+    
     for i in range(adj_train.shape[0]):
         adj_train[i,i] = 1
+    masked_percent = 15
+    adj_train_org = copy.deepcopy(adj_train)
     ones = (adj_train == 1).nonzero(as_tuple=False)
     twos = (adj_train == 2).nonzero(as_tuple=False)
     zeros = (adj_train == 0).nonzero(as_tuple=False)
-    masked_1 = random.sample(range(0, len(ones)), int(15/100*len(ones)))
-    masked_0 = random.sample(range(0, len(zeros)), int(15/100*len(ones)))
-    masked_1_random = random.sample(masked_1, int(10/100*len(masked_1)))
-    masked_0_random = random.sample(masked_0, int(10/100*len(masked_0)))
+    masked_1 = random.sample(range(0, len(ones)), int(masked_percent/100*len(ones)))
+    masked_0 = random.sample(range(0, len(zeros)), int(masked_percent/100*len(ones)))
+    masked_1_random_flip = random.sample(masked_1, int(10/100*len(masked_1)))
+    masked_0_random_flip = random.sample(masked_0, int(10/100*len(masked_0)))
+    masked_1_random_true = random.sample(masked_1, int(10/100*len(masked_1)))
+    masked_0_random_true = random.sample(masked_0, int(10/100*len(masked_0)))
     
     mask = torch.zeros(adj_train.shape[0],adj_train.shape[0])
     mask[ones[masked_1][:,0],ones[masked_1][:,1]]=1
@@ -201,8 +206,10 @@ def train_PNModel(dataCenter, features, args, device):
     # twos = torch.cat((twos, zeros[masked_0]))
     adj_train[ones[masked_1][:,0],ones[masked_1][:,1]]=2
     adj_train[zeros[masked_0][:,0],zeros[masked_0][:,1]]=2
-    adj_train[ones[masked_1_random][:,0],ones[masked_1_random][:,1]]=0
-    adj_train[zeros[masked_0_random][:,0],zeros[masked_0_random][:,1]]=1
+    adj_train[ones[masked_1_random_flip][:,0],ones[masked_1_random_flip][:,1]]=0
+    adj_train[zeros[masked_0_random_flip][:,0],zeros[masked_0_random_flip][:,1]]=1
+    adj_train[ones[masked_1_random_true][:,0],ones[masked_1_random_true][:,1]]=1
+    adj_train[zeros[masked_0_random_true][:,0],zeros[masked_0_random_true][:,1]]=0
     # non_zero = adj_train.nonzero()
     # src = non_zero[:,0]
     # dst = non_zero[:,1]
@@ -236,27 +243,18 @@ def train_PNModel(dataCenter, features, args, device):
     
 
     # adj_val = sp.csr_matrix(adj_val)
-    
     # graph_dgl_val = dgl.from_scipy(adj_val)
-
     # origianl_graph_statistics = GS.compute_graph_statistics(np.array(adj_train.todense()) + np.identity(adj_train.shape[0]))
-    
     # graph_dgl_val.add_edges(graph_dgl_val.nodes(), graph_dgl_val.nodes())  # the library does not add self-loops
-    
     # num_nodes_val = graph_dgl_val.number_of_dst_nodes()
     # adj_val = torch.tensor(adj_val.todense())  # use sparse man
-    
-       
     # if (type(feat_val) == np.ndarray):
     #     feat_val = torch.tensor(feat_val, dtype=torch.float32)
     # else:
     #     feat_val = feat_ 
-    
-
-        
-    
-    
     # randomly select 25% of the test nodes to not be in evidence
+    
+    
     not_evidence = random.sample(list(testId), int(0 * len(testId)))
         
     model = PN_FrameWork(num_of_comunities,
@@ -274,8 +272,25 @@ def train_PNModel(dataCenter, features, args, device):
     norm = torch.true_divide(adj_train_org.shape[0] * adj_train_org.shape[0],
                              ((adj_train_org.shape[0] * adj_train_org.shape[0] - torch.sum(adj_train_org)) * 2))
 
+    not_masked = torch.ones(mask.shape[0], mask.shape[1])-mask
+
+    mask_index = (mask == 1).nonzero(as_tuple=False)
+    not_masked_index = (not_masked == 1).nonzero(as_tuple=False)
+    
+    norm_masked = torch.true_divide(mask_index.shape[0],
+                             ((mask_index.shape[0] - torch.sum(adj_train_org*mask)) * 2))
+
+    norm_not_masked = torch.true_divide(not_masked_index.shape[0],
+                         ((not_masked_index.shape[0] - torch.sum(adj_train_org*not_masked)) * 2))
+ 
+    pos_wight_masked = torch.true_divide((mask_index.shape[0] - torch.sum(adj_train_org*mask)), torch.sum(
+        adj_train_org*mask))
+    
+    pos_wight_not_masked = torch.true_divide((not_masked_index.shape[0] - torch.sum(adj_train_org*not_masked)), torch.sum(
+        adj_train_org*not_masked))
+    
     for epoch in range(epoch_number):
-# print(epoch)
+
         model.train()
         # forward propagation by using all nodes
         std_z, m_z, z, reconstructed_adj = model(graph_dgl, feat_train , targets, sampling_method, is_prior, train=True)
@@ -284,11 +299,11 @@ def train_PNModel(dataCenter, features, args, device):
         #                                                                adj_train_org,
         #                                                                std_z, m_z, num_nodes, pos_wight, norm)
         z_kl, reconstruction_loss, acc, val_recons_loss = optimizer_VAE_pn(reconstructed_adj,
-                                                                        adj_train_org,
-                                                                        std_z, m_z, num_nodes, pos_wight, norm)
-        # z_kl, reconstruction_loss, acc, val_recons_loss = optimizer_VAE_em(mask, reconstructed_adj,
+                                                                         adj_train_org,
+                                                                         std_z, m_z, num_nodes, pos_wight, norm)
+        # z_kl, reconstruction_loss, acc, val_recons_loss = optimizer_VAE_em(alpha, mask_index, not_masked_index, reconstructed_adj,
         #                                                                adj_train_org,
-        #                                                                std_z, m_z, num_nodes, pos_wight, norm)
+        #                                                                std_z, m_z, num_nodes, pos_wight_masked, pos_wight_not_masked, norm_masked, norm_not_masked )
         loss = reconstruction_loss + z_kl
     
 

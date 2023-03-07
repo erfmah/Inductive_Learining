@@ -684,21 +684,30 @@ def optimizer_VAE_pn(pred, labels, std_z, mean_z, num_nodes, pos_wight, norm):
     acc = (torch.sigmoid(pred).round() == labels).sum() / float(pred.shape[0] * pred.shape[1])
     return z_kl, posterior_cost, acc, val_poterior_cost
 
-def optimizer_VAE_em(mask, pred, labels, std_z, mean_z, num_nodes, pos_wight, norm):
+def optimizer_VAE_em(alpha, Y_index, E_index, pred,labels,std_z, mean_z, num_nodes, pos_weight_Y, pos_weight_E, norm_Y, norm_E ):
+
     val_poterior_cost = 0
+
+    alpha  = float(alpha)
+    pred_y = pred[Y_index[:,0], Y_index[:,1]]
+    label_y = labels[Y_index[:,0],Y_index[:,1]]
+    pred_e = pred[E_index[:,0],E_index[:,1]]
+    label_e = labels[E_index[:,0],E_index[:,1]]
+    # posterior_cost_masked = (1/(torch.sum(mask))) * F.binary_cross_entropy_with_logits(pred*mask, labels*mask, pos_weight=pos_wight_masked)
+    # posterior_cost_not_masked = (1/(torch.sum(not_masked))) * F.binary_cross_entropy_with_logits(pred*not_masked, labels*not_masked, pos_weight=pos_wight_not_masked)
     
-    alpha  = 0.5
-    not_masked = torch.ones(mask.shape[0], mask.shape[1])-mask
-    pos_wight_masked = torch.true_divide((labels.shape[0] ** 2 - torch.sum(labels*mask)), torch.sum(
-        labels*mask))
-    pos_wight_not_masked = torch.true_divide((labels.shape[0] ** 2 - torch.sum(labels*not_masked)), torch.sum(
-        labels*not_masked))
-    posterior_cost_masked = norm * F.binary_cross_entropy_with_logits(pred*mask, labels*mask, pos_weight=pos_wight_masked)
-    posterior_cost_not_masked = norm * F.binary_cross_entropy_with_logits(pred*not_masked, labels*not_masked, pos_weight=pos_wight_not_masked)
-    posterior_cost = alpha * posterior_cost_masked + (1-alpha) * posterior_cost_not_masked
+    # posterior_cost_masked =(1/(torch.sum(label_y))) *  norm_masked * F.binary_cross_entropy_with_logits(pred_y, label_y, pos_weight=pos_wight_masked)
+    # posterior_cost_not_masked =(1/(torch.sum(label_e))) * norm_not_masked * F.binary_cross_entropy_with_logits(pred_e, label_e, pos_weight=pos_wight_not_masked)
+    
+    # posterior_cost_Y= (1/(label_y.shape[0])) *F.binary_cross_entropy_with_logits(pred_y, label_y)
+    # posterior_cost_E = (1/(label_e.shape[0])) * norm_E * F.binary_cross_entropy_with_logits(pred_e, label_e, pos_weight=pos_weight_E)
+    posterior_cost_Y =  F.binary_cross_entropy_with_logits(pred_y, label_y)
+    posterior_cost_E =  norm_E * F.binary_cross_entropy_with_logits(pred_e, label_e, pos_weight=pos_weight_E)
+    
+    posterior_cost = (alpha * posterior_cost_Y) + ((1-alpha) * posterior_cost_E)
     
     z_kl = (-0.5 / num_nodes) * torch.mean(torch.sum(1 + 2 * torch.log(std_z) - mean_z.pow(2) - (std_z).pow(2), dim=1))
-
+    #z_kl = 0
     acc = (torch.sigmoid(pred).round() == labels).sum() / float(pred.shape[0] * pred.shape[1])
     return z_kl, posterior_cost, acc, val_poterior_cost
     

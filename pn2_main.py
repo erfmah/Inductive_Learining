@@ -43,11 +43,12 @@ warnings.simplefilter('ignore')
 parser = argparse.ArgumentParser(description='Inductive')
 
 parser.add_argument('-e', dest="epoch_number", default=100, help="Number of Epochs")
-parser.add_argument('-encoder_type', dest="encoder_type", default="Multi_GatedGraphConv",
-                    help="the encoder type, Either ,mixture_of_GCNs, mixture_of_GatedGCNs , Multi_GCN or Edge_GCN ")
+parser.add_argument('--alpha', dest="alpha", default=0.3, help="alpha in objective function")
+parser.add_argument('-encoder_type', dest="encoder_type", default="Multi_RelGraphConv",
+                    help="the encoder type, Multi_GCN,Multi_GAT, Multi_GatedGraphConv, Multi_RelGraphConv")
 
 parser.add_argument('--model', type=str, default='KDD')
-parser.add_argument('--dataSet', type=str, default='cora')
+parser.add_argument('--dataSet', type=str, default='ACM')
 parser.add_argument('--seed', type=int, default=123)
 parser.add_argument('-num_node', dest="num_node", default=-1, type=str,
                     help="the size of subgraph which is sampled; -1 means use the whole graph")
@@ -81,11 +82,12 @@ parser.add_argument('-targets', dest="targets", default=[], help="This list is u
 parser.add_argument('--disjoint_transductive_inductive', dest="disjoint_transductive_inductive", default=True,
                     help="This flag is used if want to have dijoint transductive and inductive sets")
 parser.add_argument('--sampling_method', dest="sampling_method", default="deterministic", help="This var shows sampling method it could be: monte, importance_sampling, deterministic, normalized ")
-parser.add_argument('--method', dest="method", default="single", help="This var shows method it could be: multi, single")
+parser.add_argument('--method', dest="method", default="multi", help="This var shows method it could be: multi, single")
 
 
-save_recons_adj_name = ""
+
 args_kdd = parser.parse_args()
+save_recons_adj_name = str(args_kdd.alpha)+"_"
 disjoint_transductive_inductive = args_kdd.disjoint_transductive_inductive
 if disjoint_transductive_inductive=="False":
     disjoint_transductive_inductive = False
@@ -272,13 +274,16 @@ for i in sample_list:
 
     if multi_link:
         adj_list_copy = copy.deepcopy(org_adj)
-        adj_list_copy[idd, :] = 0  # set all the neigbours to 0
-        adj_list_copy[:, idd] = 0  # set all the neigbours to 0
+        adj_list_copy[idd, :] = 2  # set all the neigbours to 0
+        adj_list_copy[:, idd] = 2  # set all the neigbours to 0
 
         true_multi_links = org_adj[idd].nonzero()
 
         false_multi_link = np.array(random.sample(list(np.nonzero(org_adj[idd] == 0)[0]), len(true_multi_links[0])))
-        false_multi_links_list.append([[idd, i] for i in list(false_multi_link)])
+        for i in list(false_multi_link):
+            false_multi_links_list.append([idd, i])
+            adj_list_copy[i, idd] = 2
+            adj_list_copy[idd, i] = 2
 
         target_list = [[idd, i] for i in list(true_multi_links[0])]
         target_list.extend([[idd, i] for i in list(false_multi_link)])
@@ -469,8 +474,8 @@ if multi_link:
 
     with open('./results_csv/results.csv', 'a', newline="\n") as f:
         writer = csv.writer(f)
-        writer.writerow([save_recons_adj_name,"","","","","",""])
-        writer.writerow([auc_mean_multi, val_acc_mean_multi, val_ap_mean_multi, precision_mean_multi, recall_mean_multi, HR_mean_multi, CLL_mean_multi])
+        # writer.writerow([save_recons_adj_name,"","","","","",""])
+        writer.writerow([save_recons_adj_name, auc_mean_multi, val_acc_mean_multi, val_ap_mean_multi, precision_mean_multi, recall_mean_multi, HR_mean_multi, CLL_mean_multi])
 
     print("multi link")
     print("auc: ", auc_mean_multi)
