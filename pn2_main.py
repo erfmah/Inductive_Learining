@@ -43,12 +43,12 @@ warnings.simplefilter('ignore')
 parser = argparse.ArgumentParser(description='Inductive')
 
 parser.add_argument('-e', dest="epoch_number", default=100, help="Number of Epochs")
-parser.add_argument('--alpha', dest="alpha", default=0.3, help="alpha in objective function")
-parser.add_argument('-encoder_type', dest="encoder_type", default="Multi_RelGraphConv",
+parser.add_argument('--alpha', dest="alpha", default=0, help="alpha in objective function")
+parser.add_argument('-encoder_type', dest="encoder_type", default="Multi_GAT",
                     help="the encoder type, Multi_GCN,Multi_GAT, Multi_GatedGraphConv, Multi_RelGraphConv")
 
 parser.add_argument('--model', type=str, default='KDD')
-parser.add_argument('--dataSet', type=str, default='ACM')
+parser.add_argument('--dataSet', type=str, default='cora')
 parser.add_argument('--seed', type=int, default=123)
 parser.add_argument('-num_node', dest="num_node", default=-1, type=str,
                     help="the size of subgraph which is sampled; -1 means use the whole graph")
@@ -82,7 +82,7 @@ parser.add_argument('-targets', dest="targets", default=[], help="This list is u
 parser.add_argument('--disjoint_transductive_inductive', dest="disjoint_transductive_inductive", default=True,
                     help="This flag is used if want to have dijoint transductive and inductive sets")
 parser.add_argument('--sampling_method', dest="sampling_method", default="deterministic", help="This var shows sampling method it could be: monte, importance_sampling, deterministic, normalized ")
-parser.add_argument('--method', dest="method", default="multi", help="This var shows method it could be: multi, single")
+parser.add_argument('--method', dest="method", default="single", help="This var shows method it could be: multi, single")
 
 
 
@@ -165,6 +165,15 @@ HR_list_single = []
 CVAE_list_single = []
 CLL_list_single = []
 
+auc_list_feat_single = []
+val_acc_list_feat_single = []
+val_ap_list_feat_single = []
+precision_list_feat_single = []
+recall_list_feat_single = []
+HR_list_feat_single = []
+CVAE_list_feat_single = []
+CLL_list_feat_single = []
+
 auc_list_multi_single = []
 val_acc_list_multi_single = []
 val_ap_list_multi_single = []
@@ -204,10 +213,19 @@ print(save_recons_adj_name)
 
 pred_single_link = []
 true_single_link = []
+
+pred_feat_single_link = []
+true_feat_single_link = []
+target_feat = []
+
 pred_multi_single_link = []
 true_multi_single_link = []
 pred_multi_link = []
 true_multi_link = []
+
+
+
+
 
 targets = []
 sampling_method = args_kdd.sampling_method
@@ -221,7 +239,7 @@ if disjoint_transductive_inductive:
     org_adj[i_list, j_list] = 0  # set all the in between edges to 0
 
 # run recognition separately
-std_z_recog, m_z_recog, z_recog, re_adj_recog = run_network(features_kdd, org_adj, inductive_pn, targets, sampling_method,
+std_z_recog, m_z_recog, z_recog, re_adj_recog, reconstructed_feat = run_network(features_kdd, org_adj, inductive_pn, targets, sampling_method,
                                                             is_prior=False)
 re_adj_recog_sig = torch.sigmoid(re_adj_recog)
 # run prior network separately
@@ -245,6 +263,7 @@ for i in sample_list:
         #     writer = csv.writer(f)
         #     writer.writerow([save_recons_adj_name_i])
     targets = []
+    target_feat = []
     idd = idd_list[i]
     neighbour_id = neighbour_list[i]
     adj_list_copy = copy.deepcopy(org_adj)
@@ -252,13 +271,20 @@ for i in sample_list:
     if single_link:
         #print(idd, neighbour_id)
         adj_list_copy = copy.deepcopy(org_adj)
-        adj_list_copy[idd, neighbour_id] = 2 # find a test edge and set it to 0
-        adj_list_copy[neighbour_id, idd] = 2  # find a test edge and set it to 0
+        feat_list_copy = copy.deepcopy(features_kdd)
+        adj_list_copy[idd, neighbour_id] = 0 # find a test edge and set it to 0
+        adj_list_copy[neighbour_id, idd] = 0  # find a test edge and set it to 0
+        feat_ones = np.argwhere(feat_list_copy[idd] == 1).tolist()[0]
+        target_feat.extend(feat_ones)
+        feat_zero = np.argwhere(feat_list_copy[idd] == 0)
+        zero_feat_index = np.random.choice(feat_zero[0], len(feat_list_copy[idd].nonzero())).tolist()
+        target_feat.extend(zero_feat_index)
+        feat_list_copy[idd] = 0
 
         targets.append(idd)
         targets.append(neighbour_id)
 
-        std_z_prior, m_z_prior, z_prior, re_adj_prior = run_network(features_kdd, adj_list_copy, inductive_pn,
+        std_z_prior, m_z_prior, z_prior, re_adj_prior, re_feat_prior = run_network(feat_list_copy, adj_list_copy, inductive_pn,
                                                                     targets, sampling_method,  is_prior=True)
         if prior_only:
             CVAE = CVAE_loss(m_z_prior, m_z_prior, std_z_prior, std_z_prior, re_adj_prior.detach().numpy(), org_adj,
@@ -268,22 +294,36 @@ for i in sample_list:
                              idd, neighbour_id).detach().numpy()
         CVAE_list_single.append(CVAE)
         re_adj_prior_sig = torch.sigmoid(re_adj_prior)
+        re_feat_prior_sig = torch.sigmoid(re_feat_prior)
         pred_single_link.append(re_adj_prior_sig[idd, neighbour_id].tolist())
+        pred_feat_single_link.append(re_feat_prior_sig[idd].tolist())
         true_single_link.append(org_adj[idd, neighbour_id].tolist())
+        true_feat_single_link.append(features_kdd[idd].tolist())
         #torch.save(re_adj_prior, './output_csv/'+save_recons_adj_name+'/'+save_recons_adj_name_i+'.pt')
+        auc_feat, val_acc_feat, val_ap_feat, precision_feat, recall_feat, HR_feat, CLL_feat = roc_auc_estimator_feat(target_feat,
+                                                                                                           re_feat_prior[idd],
+                                                                                                           features_kdd[idd])
+
+        auc_list_feat_single.append(auc_feat)
+        val_acc_list_feat_single.append(val_acc_feat)
+        val_ap_list_feat_single.append(val_ap_feat)
+        precision_list_feat_single.append(precision_feat)
+        recall_list_feat_single.append(recall_feat)
+        HR_list_feat_single.append(HR_feat)
+        CLL_list_feat_single.append(CLL_feat)
 
     if multi_link:
         adj_list_copy = copy.deepcopy(org_adj)
-        adj_list_copy[idd, :] = 2  # set all the neigbours to 0
-        adj_list_copy[:, idd] = 2  # set all the neigbours to 0
+        adj_list_copy[idd, :] = 0  # set all the neigbours to 0
+        adj_list_copy[:, idd] = 0  # set all the neigbours to 0
 
         true_multi_links = org_adj[idd].nonzero()
 
         false_multi_link = np.array(random.sample(list(np.nonzero(org_adj[idd] == 0)[0]), len(true_multi_links[0])))
         for i in list(false_multi_link):
             false_multi_links_list.append([idd, i])
-            adj_list_copy[i, idd] = 2
-            adj_list_copy[idd, i] = 2
+            adj_list_copy[i, idd] = 0
+            adj_list_copy[idd, i] = 0
 
         target_list = [[idd, i] for i in list(true_multi_links[0])]
         target_list.extend([[idd, i] for i in list(false_multi_link)])
@@ -292,7 +332,7 @@ for i in sample_list:
         targets.extend(list(false_multi_link)) ################################ add back for importance sampling
         targets.append(idd)
 
-        std_z_prior, m_z_prior, z_prior, re_adj_prior = run_network(features_kdd, adj_list_copy, inductive_pn,
+        std_z_prior, m_z_prior, z_prior, re_adj_prior, reconstructed_feat = run_network(features_kdd, adj_list_copy, inductive_pn,
                                                                     targets, sampling_method, is_prior=True)
 
         if prior_only:
@@ -334,7 +374,7 @@ for i in sample_list:
                                                                   np.delete(adj_list_copy[idd].nonzero()[0],
                                                                             np.where(adj_list_copy[idd].nonzero()[
                                                                                          0] == nn)))
-            std_z_recog, m_z_recog, z_recog, re_adj_recog = run_network(features_kdd, adj_list_copy, inductive_pn,
+            std_z_recog, m_z_recog, z_recog, re_adj_recog, reconstructed_feat = run_network(features_kdd, adj_list_copy, inductive_pn,
                                                                         targets, sampling_method,
                                                                         is_prior=False)
 
@@ -343,7 +383,7 @@ for i in sample_list:
 
             targets.append(idd)
             targets.append(nn)
-            std_z_prior, m_z_prior, z_prior, re_adj_prior = run_network(features_kdd, adj_list_copy, inductive_pn,
+            std_z_prior, m_z_prior, z_prior, re_adj_prior, reconstructed_feat = run_network(features_kdd, adj_list_copy, inductive_pn,
                                                                         targets, sampling_method, is_prior=True)
 
             if prior_only:
@@ -359,7 +399,7 @@ for i in sample_list:
             true_multi_single_link.append(org_adj[idd, nn].tolist())
 
         # Get false edges
-        std_z_recog, m_z_recog, z_recog, re_adj_recog = run_network(features_kdd, org_adj, inductive_pn, targets,
+        std_z_recog, m_z_recog, z_recog, re_adj_recog, reconstructed_feat = run_network(features_kdd, org_adj, inductive_pn, targets,
                                                                      sampling_method, is_prior=False)
         re_adj_recog_sig = torch.sigmoid(re_adj_recog)
         res = np.argwhere(org_adj[idd] == 0)
@@ -380,33 +420,51 @@ for i in sample_list:
 
 
 if single_link:
+    # false_count = len(pred_single_link)
+    # res = np.argwhere(org_adj == 0)
+    # np.random.shuffle(res)
+    # index = np.where(np.isin(res[:, 0], testId))  # only one node of the 2 ends of an edge needs to be in testId
+    # test_neg_edges = res[index]
+    #
+    # for test_neg_edge in test_neg_edges[:false_count]:
+    #     targets = []
+    #     idd = test_neg_edge[0]
+    #     neighbour_id = test_neg_edge[1]
+    #     adj_list_copy = copy.deepcopy(org_adj)
+    #     adj_list_copy[idd, neighbour_id] = 0
+    #     adj_list_copy[neighbour_id, idd] = 0
+    #
+    #     targets.append(idd)
+    #     targets.append(neighbour_id)
+    #
+    #     std_z_prior, m_z_prior, z_prior, re_adj_prior, reconstructed_feat = run_network(features_kdd, adj_list_copy, inductive_pn,
+    #                                                                 targets, sampling_method,  is_prior=True)
+    # re_adj_prior_sig = torch.sigmoid(re_adj_prior)
+    # pred_single_link.append(re_adj_prior_sig[idd, neighbour_id].tolist())
+    # true_single_link.append(org_adj[idd, neighbour_id].tolist())
+    #
+    #
+    #
+    #
+    # auc, val_acc, val_ap, precision, recall, HR, CLL = roc_auc_single(pred_single_link, true_single_link)
+    # auc_list_single.append(auc)
+    # val_acc_list_single.append(val_acc)
+    # val_ap_list_single.append(val_ap)
+    # precision_list_single.append(precision)
+    # recall_list_single.append(recall)
+    # HR_list_single.append(HR)
+    # CLL_list_single.append(CLL)
     false_count = len(pred_single_link)
     res = np.argwhere(org_adj == 0)
     np.random.shuffle(res)
     index = np.where(np.isin(res[:, 0], testId))  # only one node of the 2 ends of an edge needs to be in testId
     test_neg_edges = res[index]
-    
-    for test_neg_edge in test_neg_edges[:false_count]:
-        targets = []
-        idd = test_neg_edge[0]
-        neighbour_id = test_neg_edge[1]
-        adj_list_copy = copy.deepcopy(org_adj)
-        adj_list_copy[idd, neighbour_id] = 2
-        adj_list_copy[neighbour_id, idd] = 2
-        
-        targets.append(idd)
-        targets.append(neighbour_id)
-        
-        std_z_prior, m_z_prior, z_prior, re_adj_prior = run_network(features_kdd, adj_list_copy, inductive_pn,
-                                                                    targets, sampling_method,  is_prior=True)
-        re_adj_prior_sig = torch.sigmoid(re_adj_prior)
-        pred_single_link.append(re_adj_prior_sig[idd, neighbour_id].tolist())
-        true_single_link.append(org_adj[idd, neighbour_id].tolist())
-
-
-    
+    re_adj_recog_sig = torch.sigmoid(re_adj_recog)
+    pred_single_link.extend(re_adj_recog_sig[test_neg_edges[:false_count, 0], test_neg_edges[:false_count, 1]].tolist())
+    true_single_link.extend(org_adj[test_neg_edges[:false_count, 0], test_neg_edges[:false_count, 1]].tolist())
 
     auc, val_acc, val_ap, precision, recall, HR, CLL = roc_auc_single(pred_single_link, true_single_link)
+    # auc_feat, val_acc_feat, val_ap_feat, precision_feat, recall_feat, HR_feat, CLL_feat = get_metrices(target_feat, pred_feat_single_link, true_feat_single_link)
     auc_list_single.append(auc)
     val_acc_list_single.append(val_acc)
     val_ap_list_single.append(val_ap)
@@ -513,6 +571,14 @@ if single_link:
     HR_mean_single = statistics.mean(HR_list_single)
     CLL_mean_single = np.mean(CLL_list_single)
 
+    auc_mean_feat_single = statistics.mean(auc_list_feat_single)
+    val_acc_mean_feat_single = statistics.mean(val_acc_list_feat_single)
+    val_ap_mean_feat_single = statistics.mean(val_ap_list_feat_single)
+    precision_mean_feat_single = statistics.mean(precision_list_feat_single)
+    recall_mean_feat_single = statistics.mean(recall_list_feat_single)
+    HR_mean_feat_single = statistics.mean(HR_list_feat_single)
+    #CLL_mean_feat_single = np.mean(CLL_list_feat_single)
+    CLL_mean_feat_single = []
 
     with open('./results_csv/results.csv', 'a', newline="\n") as f:
         writer = csv.writer(f)
@@ -528,6 +594,15 @@ if single_link:
     print("recall", recall_mean_single)
     print("HR", HR_mean_single)
     print("CLL", CLL_mean_single)
+
+    print("\nsingle link")
+    print("auc_feat: ", auc_mean_feat_single)
+    print("acc_feat", val_acc_mean_feat_single)
+    print("ap_feat: ", val_ap_mean_feat_single)
+    print("precision_feat", precision_mean_feat_single)
+    print("recall_feat", recall_mean_feat_single)
+    print("HR_feat", HR_mean_feat_single)
+    print("CLL_feat", CLL_mean_feat_single)
 
 # print("CLL single",statistics.mean(neigbour_prob_single_list))
 # print("CLL multi",statistics.mean(neighbour_prob_multi_link_list))

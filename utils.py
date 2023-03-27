@@ -675,16 +675,17 @@ class Datasets():
 
 
 # objective Function
-def optimizer_VAE_pn(pred, labels, std_z, mean_z, num_nodes, pos_wight, norm):
+def optimizer_VAE_pn(pred, reconstructed_feat, labels, x, norm_feat, pos_weight_feat,  std_z, mean_z, num_nodes, pos_weight, norm):
     val_poterior_cost = 0
-    posterior_cost = norm * F.binary_cross_entropy_with_logits(pred, labels, pos_weight=pos_wight)
-
+    posterior_cost_edges = norm * F.binary_cross_entropy_with_logits(pred, labels, pos_weight=pos_weight)
+    posterior_cost_features = norm_feat * F.binary_cross_entropy_with_logits(reconstructed_feat, x, pos_weight=pos_weight_feat)
+    posterior_cost_features=0
     z_kl = (-0.5 / num_nodes) * torch.mean(torch.sum(1 + 2 * torch.log(std_z) - mean_z.pow(2) - (std_z).pow(2), dim=1))
 
     acc = (torch.sigmoid(pred).round() == labels).sum() / float(pred.shape[0] * pred.shape[1])
-    return z_kl, posterior_cost, acc, val_poterior_cost
+    return z_kl, posterior_cost_edges+posterior_cost_features, acc, val_poterior_cost
 
-def optimizer_VAE_em(alpha, Y_index, E_index, pred,labels,std_z, mean_z, num_nodes, pos_weight_Y, pos_weight_E, norm_Y, norm_E ):
+def optimizer_VAE_em(alpha, Y_index, E_index, pred, reconstructed_feat, labels, x,  norm_feat,pos_weight_feat,std_z, mean_z, num_nodes, pos_weight_Y, pos_weight_E, norm_Y, norm_E ):
 
     val_poterior_cost = 0
 
@@ -703,15 +704,19 @@ def optimizer_VAE_em(alpha, Y_index, E_index, pred,labels,std_z, mean_z, num_nod
     # posterior_cost_E = (1/(label_e.shape[0])) * norm_E * F.binary_cross_entropy_with_logits(pred_e, label_e, pos_weight=pos_weight_E)
     posterior_cost_Y =  F.binary_cross_entropy_with_logits(pred_y, label_y)
     posterior_cost_E =  norm_E * F.binary_cross_entropy_with_logits(pred_e, label_e, pos_weight=pos_weight_E)
-    
-    posterior_cost = (alpha * posterior_cost_Y) + ((1-alpha) * posterior_cost_E)
+    posterior_cost_features = norm_feat * F.binary_cross_entropy_with_logits(reconstructed_feat, x,
+                                                                             pos_weight=pos_weight_feat)
+
+    posterior_cost = (alpha * posterior_cost_Y) + ((1-alpha) * posterior_cost_E) + posterior_cost_features
     
     z_kl = (-0.5 / num_nodes) * torch.mean(torch.sum(1 + 2 * torch.log(std_z) - mean_z.pow(2) - (std_z).pow(2), dim=1))
     #z_kl = 0
     acc = (torch.sigmoid(pred).round() == labels).sum() / float(pred.shape[0] * pred.shape[1])
     return z_kl, posterior_cost, acc, val_poterior_cost
     
-
+def select_subgraph(graph):
+    subgraph = graph
+    return subgraph
 def roc_auc_estimator(target_edges, reconstructed_adj, origianl_agjacency):
     prediction = []
     true_label = []
@@ -750,6 +755,41 @@ def roc_auc_estimator(target_edges, reconstructed_adj, origianl_agjacency):
     return auc, acc, ap, precision, recall, HR, cll
 
 
+def roc_auc_estimator_feat(target_id, reconstructed_feat, origianl_feat):
+    prediction = []
+    true_label = []
+    counter = 0
+    for id in target_id:
+        prediction.append(reconstructed_feat[id].item())
+        prediction.append(reconstructed_feat[id].item())
+        true_label.append(origianl_feat[id].item())
+        true_label.append(origianl_feat[id].item())
+
+    pred = np.array(prediction)
+    pred[pred > .5] = 1.0
+    pred[pred < .5] = 0.0
+    pred = pred.astype(int)
+
+    precision = precision_score(y_pred=pred, y_true=true_label)
+    recall = recall_score(y_pred=pred, y_true=true_label)
+    auc = roc_auc_score(y_score=prediction, y_true=true_label)
+    acc = accuracy_score(y_pred=pred, y_true=true_label, normalize=True)
+    ap = average_precision_score(y_score=prediction, y_true=true_label)
+    cof_mtx = confusion_matrix(y_true=true_label, y_pred=pred)
+
+    hr_ind = np.argpartition(np.array(prediction), -1 * len(pred) // 5)[-1 * len(pred) // 5:]
+    HR = precision_score(y_pred=np.array(pred)[hr_ind], y_true=np.array(true_label)[hr_ind])
+
+    pred = np.array(prediction)
+
+    q_multi = []
+    with open('./results_csv/results_CLL.csv', newline='') as f:
+        reader = csv.DictReader(f)
+        for q in reader:
+            q_multi.append(float(q['q'])
+                           )
+    cll = np.log(np.array(q_multi))
+    return auc, acc, ap, precision, recall, HR, cll
 
 
 def roc_auc_estimator_train(pos_edges, negative_edges, reconstructed_adj, origianl_agjacency):
@@ -779,7 +819,10 @@ def roc_auc_estimator_train(pos_edges, negative_edges, reconstructed_adj, origia
     return auc, acc, ap, cof_mtx
 
 
-def roc_auc_single(prediction, true_label):
+def roc_auc_single(prediction, true_label, is_feature=False):
+    if is_feature:
+        prediction = sum(prediction, [])
+        true_label = sum(true_label, [])
     pred = np.array(prediction)
     pred[pred > .5] = 1
     pred[pred < .5] = 0
@@ -1101,8 +1144,9 @@ def run_network(feats, adj, model, targets, sampling_method, is_prior):
     dst_2 = twos[:,1]
     dict_edges = {('node', 1, 'node'):(src_1,dst_1), ('node', 2, 'node'):(src_2,dst_2)}
     graph_dgl = dgl.heterograph(dict_edges)
-    std_z, m_z, z, re_adj = model(graph_dgl, feats, targets, sampling_method, is_prior, train=False)
-    return std_z, m_z, z, re_adj
+    graph_dgl = dgl.graph((ones[:,0], ones[:,1]))
+    std_z, m_z, z, re_adj, reconstructed_feat = model(graph_dgl, feats, targets, sampling_method, is_prior, train=False)
+    return std_z, m_z, z, re_adj, reconstructed_feat
 
 def make_graph(adj):
     ones = (adj == 1).nonzero(as_tuple=False)

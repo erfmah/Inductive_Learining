@@ -1,5 +1,6 @@
 import sys, os
 import torch
+from torch.linalg import svd
 import random
 
 import torch.nn as nn
@@ -515,8 +516,8 @@ class multi_layer_GAT(torch.nn.Module):
         """
         super(multi_layer_GAT, self).__init__()
         layers = [in_feature] + layers
-        self.num_head = 4
-        latent_dim =int(latent_dim/(4**2))
+        self.num_head = 8
+        latent_dim =int(latent_dim/(8**2))
         
         if len(layers) < 1: raise Exception("sorry, you need at least two layer")
         self.ConvLayers = torch.nn.ModuleList(
@@ -1343,7 +1344,7 @@ class MultiLatetnt_SBM_decoder(torch.nn.Module):
 
 
 class PN_FrameWork(torch.nn.Module):
-    def __init__(self, latent_dim, encoder, decoder, feature_encoder, not_evidence, mlp_decoder=False, layesrs=None):
+    def __init__(self, latent_dim, encoder, decoder, feature_decoder,  feature_encoder, not_evidence, mlp_decoder=False, layesrs=None):
         """
         :param latent_dim: the dimention of each embedded node; |z| or len(z)
         :param decoder:
@@ -1357,6 +1358,7 @@ class PN_FrameWork(torch.nn.Module):
         self.latent_dim = latent_dim
         self.feature_encoder = feature_encoder
         self.not_evidence = not_evidence
+        self.feature_decoder = feature_decoder
         self.mq = None
         self.sq = None
         # self.is_prior = is_prior
@@ -1370,10 +1372,14 @@ class PN_FrameWork(torch.nn.Module):
     def forward(self, adj, x, targets, sampling_method, is_prior, train=True):
 
         if train:
+
             z_0 = self.get_z(x, self.latent_dim)  # attribute encoder
-            z, m_z, std_z = self.inference(adj, z_0)  # link encoder
+            z, m_z, std_z = self.inference(adj, z_0) # link encoder
+
+
             
             generated_adj = self.generator(z)  # link decoder
+            generated_feat = self.generator_feat(z)
         else:
             z_0 = self.get_z(x, self.latent_dim)  # attribute encoder
 
@@ -1383,7 +1389,7 @@ class PN_FrameWork(torch.nn.Module):
             z, m_z, std_z = self.inference(adj, z_0)  # link encoder
 
             generated_adj = self.generator(z)  # link decoder
-
+            generated_feat = self.generator_feat(z)
             if is_prior:
                 
                 if sampling_method == "normalized":
@@ -1423,7 +1429,7 @@ class PN_FrameWork(torch.nn.Module):
 
         # z = self.dropout(z)
 
-        return std_z, m_z, z, generated_adj
+        return std_z, m_z, z, generated_adj, generated_feat
 
     def run_monte(self, generated_adj, x, adj, targets):
         # if we use Monte Carlo sampling
@@ -1632,6 +1638,11 @@ class PN_FrameWork(torch.nn.Module):
         adj = self.decoder(z)
         return adj
         # asakhuja - End
+    def generator_feat(self, z):
+        # apply chain of mlp on nede embedings
+        # z = self.embedding_level_mlp(z)
+        features = self.feature_decoder(z)
+        return features
 
     def get_z(self, x, latent_dim):
         """Encode a batch of data points, x, into their z representations."""
@@ -1645,32 +1656,85 @@ class PN_FrameWork(torch.nn.Module):
     # # pnaddaf - End
 
 
-class feature_encoder(torch.nn.Module):
+class feature_encoder_nn(torch.nn.Module):
     def __init__(self, in_feature, latent_dim=128):
         """
         :param in_feature: the size of input feature; X.shape()[1]
         :param latent_dim: the dimention of each embedded node; |z| or len(z)
         :param layers: a list in which each element determine the size of corresponding GCNN Layer.
         """
-        super(feature_encoder, self).__init__()
+        super(feature_encoder_nn, self).__init__()
         self.leakyRelu = nn.LeakyReLU()
 
-        # self.l1 = nn.Linear(in_features=in_feature.shape[1], out_features=latent_dim)
+        self.l1 = nn.Linear(in_features=in_feature.shape[1], out_features=latent_dim)
 
         self.std = nn.Linear(in_features=in_feature.shape[1], out_features=latent_dim)
         self.mean = nn.Linear(in_features=in_feature.shape[1], out_features=latent_dim)
 
-    # def forward(self, x):
-    #     h1 = self.leakyRelu(self.l1(x))   
-    #     return h1
-
     def forward(self, x):
-        m_q_z = self.mean(x)
-        std_q_z = torch.relu(self.std(x)) + .0001
-
-        z = self.reparameterize(m_q_z, std_q_z)
+        z = self.leakyRelu(self.l1(x))
         return z
+
+    # def forward(self, x):
+    #     # m_q_z = self.mean(x)
+    #     # std_q_z = torch.relu(self.std(x)) + .0001
+    #     #
+    #     # z = self.reparameterize(m_q_z, std_q_z)
+    #     mean = torch.mean(x, dim=0)
+    #
+    #     # Subtract the mean from each data point
+    #     x = x - mean
+    #
+    #     # Compute the covariance matrix
+    #     cov = torch.matmul(x.T, x) / x.shape[0]
+    #
+    #     # Compute the singular value decomposition of the covariance matrix
+    #     U, S, V = svd(cov)
+    #
+    #     # Select the top k principal components
+    #     U = U[:, :128]
+    #
+    #     # Project the data onto the top k principal components
+    #     z = torch.matmul(x, U)
+    #
+    #     return z
 
     def reparameterize(self, mean, std):
         eps = torch.randn_like(std)
         return eps.mul(std).add(mean)
+
+class feature_decoder_nn(torch.nn.Module):
+    def __init__(self, out_feature, latent_dim=128):
+        """
+        :param in_feature: the size of input feature; X.shape()[1]
+        :param latent_dim: the dimention of each embedded node; |z| or len(z)
+        :param layers: a list in which each element determine the size of corresponding GCNN Layer.
+        """
+        super(feature_decoder_nn, self).__init__()
+        self.leakyRelu = nn.LeakyReLU()
+
+        # self.l1 = nn.Linear(in_features=in_feature.shape[1], out_features=latent_dim)
+
+        self.decoder = nn.Linear(in_features=latent_dim, out_features=out_feature)
+
+    # def forward(self, x):
+    #     h1 = self.leakyRelu(self.l1(x))
+    #     return h1
+
+    def forward(self, z):
+
+
+        re_feature = self.decoder(z)
+
+        return re_feature
+    #     self.fc1 = nn.Linear(in_features=128, out_features=1433)
+    #     self.activation = nn.ReLU()
+    # # def forward(self, x):
+    # #     h1 = self.leakyRelu(self.l1(x))
+    # #     return h1
+    #
+    # def forward(self, z):
+    #     z = self.fc1(z)
+    #     re_feature = self.activation(z)
+    #
+    #     return re_feature
