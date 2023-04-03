@@ -1672,7 +1672,10 @@ class feature_encoder_nn(torch.nn.Module):
         self.mean = nn.Linear(in_features=in_feature.shape[1], out_features=latent_dim)
 
     def forward(self, x):
-        z = self.leakyRelu(self.l1(x))
+        m_q_z = self.mean(x)
+        std_q_z = torch.relu(self.std(x)) + .0001
+
+        z = self.reparameterize(m_q_z, std_q_z)
         return z
 
     # def forward(self, x):

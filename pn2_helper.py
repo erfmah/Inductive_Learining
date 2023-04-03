@@ -36,6 +36,7 @@ import plotter
 
 #%% KDD model
 def train_PNModel(dataCenter, features, args, device):
+    loss_type = args.loss_type
     decoder = args.decoder_type
     encoder = args.encoder_type
     num_of_relations = args.num_of_relations  # diffrent type of relation
@@ -169,9 +170,11 @@ def train_PNModel(dataCenter, features, args, device):
         validId = getattr(dataCenter, ds + '_val')
         testId = getattr(dataCenter, ds + '_test')
         adj_train =  original_adj.cpu().detach().numpy()[trainId, :][:, trainId]
+        adj_val = original_adj.cpu().detach().numpy()[validId, :][:, validId]
         
         feat_np = features.cpu().data.numpy()
         feat_train = feat_np[trainId, :]
+        feat_val = feat_np[validId, :]
         
         
         
@@ -308,7 +311,7 @@ def train_PNModel(dataCenter, features, args, device):
         # z_kl, reconstruction_loss, acc, val_recons_loss = optimizer_VAE_pn(reconstructed_adj,
         #                                                                adj_train_org,
         #                                                                std_z, m_z, num_nodes, pos_wight, norm)
-        z_kl, reconstruction_loss, acc, val_recons_loss = optimizer_VAE_pn(reconstructed_adj, reconstructed_feat,
+        z_kl, reconstruction_loss, acc, val_recons_loss = optimizer_VAE_pn(loss_type, reconstructed_adj, reconstructed_feat,
                                                                          adj_train_org, feat_train, norm_feat,pos_weight_feat,
                                                                          std_z, m_z, num_nodes, pos_wight, norm)
         # z_kl, reconstruction_loss, acc, val_recons_loss = optimizer_VAE_em(alpha, mask_index, not_masked_index, reconstructed_adj, reconstructed_feat,

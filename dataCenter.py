@@ -40,8 +40,8 @@ class DataCenter(object):
         #super(DataCenter, self).__init__()
         super().__init__()
         self.config = config
-        self.test_split = 0.3
-        self.val_split = 0.0
+        self.test_split = 0.2
+        self.val_split = 0.1
 
 
 
