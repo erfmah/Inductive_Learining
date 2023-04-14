@@ -32,6 +32,7 @@ import pn2_helper as helper
 import classification
 import statistics
 import warnings
+from functools import partial
 
 warnings.simplefilter('ignore')
 
@@ -46,9 +47,10 @@ parser.add_argument('-e', dest="epoch_number", default=100, help="Number of Epoc
 parser.add_argument('--alpha', dest="alpha", default=0, help="alpha in objective function")
 parser.add_argument('--encoder_type', dest="encoder_type", default="Multi_GAT",
                     help="the encoder type, Multi_GCN,Multi_GAT, Multi_GatedGraphConv, Multi_RelGraphConv")
-
+parser.add_argument('--b', dest="b", default='1', help="boundry for hyperparametrs")
+parser.add_argument('--c', dest="c", default='1', help="number of run")
 parser.add_argument('--model', type=str, default='KDD')
-parser.add_argument('--dataSet', type=str, default='citeseer')
+parser.add_argument('--dataSet', type=str, default='ACM')
 parser.add_argument('--seed', type=int, default=123)
 parser.add_argument('-num_node', dest="num_node", default=-1, type=str,
                     help="the size of subgraph which is sampled; -1 means use the whole graph")
@@ -102,6 +104,8 @@ else:
 
 print("")
 print("SETING: " + str(args_kdd))
+
+
 
 pltr = plotter.Plotter(functions=["Accuracy", "loss", "AUC"])
 
@@ -211,7 +215,7 @@ elif single_link:
 else:
     save_recons_adj_name = save_recons_adj_name + 'multi_link_'+ds
 
-print(save_recons_adj_name)
+
 
 pred_single_link = []
 true_single_link = []
@@ -252,24 +256,31 @@ neighbour_list = res[1][index]
 sample_list = random.sample(range(0, len(idd_list)), 200)
 false_multi_links_list = []
 
+save_recons_adj_name = args_kdd.c+"_"+args_kdd.b + "_"+save_recons_adj_name
 with open ('./results_csv/results_CLL.csv','w') as f:
     wtr = csv.writer(f)
     wtr.writerow(['','q'])
-with open ('./results_csv/loss.csv','a') as f:
+
+with open ('results_csv/loss_adj_train.csv', 'a') as f:
+    wtr = csv.writer(f)
+    wtr.writerow([save_recons_adj_name])
+with open ('results_csv/loss_feat_train.csv', 'a') as f:
+    wtr = csv.writer(f)
+    wtr.writerow([save_recons_adj_name])
+with open ('results_csv/loss_train.csv', 'a') as f:
+    wtr = csv.writer(f)
+    wtr.writerow([save_recons_adj_name])
+with open ('results_csv/loss_val.csv', 'a') as f:
     wtr = csv.writer(f)
     wtr.writerow([save_recons_adj_name])
 xx = 0
 
 counter = 0
 for i in sample_list:
-    while counter<100:
+    while counter < 100:
         print(xx)
         xx +=1
         save_recons_adj_name_i = save_recons_adj_name + '_' + str(i)
-        #if sampling_method == 'monte':
-            # with open('./results_csv/results_CLL.csv', 'a', newline="\n") as f:
-            #     writer = csv.writer(f)
-            #     writer.writerow([save_recons_adj_name_i])
         targets = []
         target_feat = []
         idd = idd_list[i]
@@ -529,7 +540,7 @@ if single_link:
 #     HR_list_multi.append(HR)
 
 # Print results
-
+print(save_recons_adj_name)
 
 if multi_link:
     auc_mean_multi = statistics.mean(auc_list_multi)

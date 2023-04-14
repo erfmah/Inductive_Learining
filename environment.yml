@@ -122,7 +122,7 @@ dependencies:
   - nettle=3.7.3=hbbd107a_1
   - ninja=1.10.2=hff7bd54_1
   - notebook=6.4.3=py37h06a4308_0
-  - numpy=1.19.2=py37h54aff64_0
+  - 7=py37h54aff64_0
   - numpy-base=1.19.2=py37hfa32c7d_0
   - numpydoc=1.1.0=pyhd3eb1b0_1
   - olefile=0.46=py_0

@@ -675,7 +675,7 @@ class Datasets():
 
 
 # objective Function
-def optimizer_VAE_pn(loss_type, pred, reconstructed_feat, labels, x, norm_feat, pos_weight_feat,  std_z, mean_z, num_nodes, pos_weight, norm):
+def  optimizer_VAE_pn (lambda_1, lambda_2, loss_type, pred, reconstructed_feat, labels, x, norm_feat, pos_weight_feat,  std_z, mean_z, num_nodes, pos_weight, norm):
     val_poterior_cost = 0
     posterior_cost_edges = norm * F.binary_cross_entropy_with_logits(pred, labels, pos_weight=pos_weight)
     posterior_cost_features = norm_feat * F.binary_cross_entropy_with_logits(reconstructed_feat, x, pos_weight=pos_weight_feat)
@@ -686,27 +686,24 @@ def optimizer_VAE_pn(loss_type, pred, reconstructed_feat, labels, x, norm_feat, 
     ones_adj = labels.nonzero().shape[0]
 
     if loss_type == "1":
-        posterior_cost = posterior_cost_edges + posterior_cost_features
+        posterior_cost = lambda_1 * posterior_cost_edges + lambda_2 * posterior_cost_features
     elif loss_type == "2":
-        posterior_cost = (1 / ones_adj) * posterior_cost_edges + (1 / ones_x) * posterior_cost_features
+        posterior_cost = lambda_1 * (1 / ones_adj) * posterior_cost_edges + lambda_2 * (1 / ones_x) * posterior_cost_features
     elif loss_type == "3":
-        posterior_cost = (ones_x / ones_adj) * posterior_cost_edges + (ones_adj / ones_x) * posterior_cost_features
+        posterior_cost = lambda_1 * (ones_x / ones_adj) * posterior_cost_edges + lambda_2 * (ones_adj / ones_x) * posterior_cost_features
     elif loss_type == "4":
-        posterior_cost = (1 / (labels.shape[0]*labels.shape[1])) * posterior_cost_edges + (1 / (x.shape[0]*x.shape[1])) * posterior_cost_features
+        posterior_cost = lambda_1 * (1 / (labels.shape[0]*labels.shape[1])) * posterior_cost_edges + lambda_2 * (1 / (x.shape[0]*x.shape[1])) * posterior_cost_features
     elif loss_type == "5":
-        posterior_cost = posterior_cost_features
+        posterior_cost = lambda_1 * posterior_cost_features
     elif loss_type == "6":
-        posterior_cost = (ones_adj / ones_x) * posterior_cost_edges + (ones_x / ones_adj) * posterior_cost_features
+        posterior_cost = lambda_1 * (ones_adj / ones_x) * posterior_cost_edges + lambda_2 * (ones_x / ones_adj) * posterior_cost_features
     elif loss_type == "7":
-        posterior_cost = ((x.shape[0] * x.shape[1]) / (labels.shape[0] * labels.shape[1])) * posterior_cost_edges + (
+        posterior_cost = lambda_1 * ((x.shape[0] * x.shape[1]) / (labels.shape[0] * labels.shape[1])) * posterior_cost_edges + lambda_2 * (
                 (labels.shape[0] * labels.shape[1]) / (x.shape[0] * x.shape[1])) * posterior_cost_features
     else:
-        posterior_cost = ((labels.shape[0] * labels.shape[1]) / (x.shape[0] * x.shape[1])) * posterior_cost_edges + (
+        posterior_cost = lambda_1 * ((labels.shape[0] * labels.shape[1]) / (x.shape[0] * x.shape[1])) * posterior_cost_edges + lambda_2 * (
                 (x.shape[0] * x.shape[1]) / (labels.shape[0] * labels.shape[1])) * posterior_cost_features
-    with open('./results_csv/loss.csv', 'a') as f:
-        wtr = csv.writer(f)
-        wtr.writerow([posterior_cost_features.item()])
-    return z_kl, posterior_cost, acc, val_poterior_cost
+    return z_kl, posterior_cost, acc, val_poterior_cost, posterior_cost_edges, posterior_cost_features
 
 def optimizer_VAE_em(alpha, Y_index, E_index, pred, reconstructed_feat, labels, x,  norm_feat,pos_weight_feat,std_z, mean_z, num_nodes, pos_weight_Y, pos_weight_E, norm_Y, norm_E ):
 
