@@ -50,7 +50,7 @@ parser.add_argument('--encoder_type', dest="encoder_type", default="Multi_GAT",
 parser.add_argument('--b', dest="b", default='1', help="boundry for hyperparametrs")
 parser.add_argument('--c', dest="c", default='1', help="number of run")
 parser.add_argument('--model', type=str, default='KDD')
-parser.add_argument('--dataSet', type=str, default='ACM')
+parser.add_argument('--dataSet', type=str, default='cora')
 parser.add_argument('--seed', type=int, default=123)
 parser.add_argument('-num_node', dest="num_node", default=-1, type=str,
                     help="the size of subgraph which is sampled; -1 means use the whole graph")
