@@ -283,6 +283,9 @@ for i in sample_list:
         save_recons_adj_name_i = save_recons_adj_name + '_' + str(i)
         targets = []
         target_feat = []
+        target_feat_id = []
+        target_feat_1 = []
+        target_feat_2 = []
         idd = idd_list[i]
         neighbour_id = neighbour_list[i]
         adj_list_copy = copy.deepcopy(org_adj)
@@ -295,12 +298,27 @@ for i in sample_list:
                 feat_list_copy = copy.deepcopy(features_kdd)
                 adj_list_copy[idd, neighbour_id] = 0 # find a test edge and set it to 0
                 adj_list_copy[neighbour_id, idd] = 0  # find a test edge and set it to 0
+
+                #setting feature to 0 and sampling equal number of 1s and 0s
                 feat_ones = np.argwhere(feat_list_copy[idd] == 1).tolist()[0]
-                target_feat.extend(feat_ones)
+                target_feat_1.extend(feat_ones)
                 feat_zero = np.argwhere(feat_list_copy[idd] == 0)
                 zero_feat_index = np.random.choice(feat_zero[0], len(feat_list_copy[idd].nonzero())).tolist()
-                target_feat.extend(zero_feat_index)
+                target_feat_1.extend(zero_feat_index)
                 feat_list_copy[idd] = 0
+
+                target_feat.append(target_feat_1)
+                target_feat_id.append(idd)
+
+                # feat_ones = np.argwhere(feat_list_copy[neighbour_id] == 1).tolist()[0]
+                # target_feat_2.extend(feat_ones)
+                # feat_zero = np.argwhere(feat_list_copy[neighbour_id] == 0)
+                # zero_feat_index = np.random.choice(feat_zero[0], len(feat_list_copy[neighbour_id].nonzero())).tolist()
+                # target_feat_2.extend(zero_feat_index)
+                # feat_list_copy[neighbour_id] = 0
+                # target_feat.append(target_feat_2)
+                #
+                # target_feat_id.append(neighbour_id)
 
                 targets.append(idd)
                 targets.append(neighbour_id)
@@ -319,11 +337,11 @@ for i in sample_list:
                 pred_single_link.append(re_adj_prior_sig[idd, neighbour_id].tolist())
                 pred_feat_single_link.append(re_feat_prior_sig[idd].tolist())
                 true_single_link.append(org_adj[idd, neighbour_id].tolist())
-                true_feat_single_link.append(features_kdd[idd].tolist())
+                # true_feat_single_link.append(features_kdd[idd].tolist())
                 #torch.save(re_adj_prior, './output_csv/'+save_recons_adj_name+'/'+save_recons_adj_name_i+'.pt')
-                auc_feat, val_acc_feat, val_ap_feat, precision_feat, recall_feat, HR_feat, CLL_feat = roc_auc_estimator_feat(target_feat,
-                                                                                                                   re_feat_prior[idd],
-                                                                                                                   features_kdd[idd])
+                auc_feat, val_acc_feat, val_ap_feat, precision_feat, recall_feat, HR_feat, CLL_feat = roc_auc_estimator_feat(target_feat,target_feat_id,
+                                                                                                                   re_feat_prior_sig,
+                                                                                                                   features_kdd)
 
                 auc_list_feat_single.append(auc_feat)
                 val_acc_list_feat_single.append(val_acc_feat)
@@ -607,7 +625,7 @@ if single_link:
         writer.writerow([auc_mean_single,val_acc_mean_single,val_ap_mean_single,precision_mean_single,recall_mean_single,HR_mean_single,CLL_mean_single])
     with open('./results_csv/results.csv', 'a', newline="\n") as f:
         writer = csv.writer(f)
-        writer.writerow(["feat"+save_recons_adj_name,"","","","","",""])
+        writer.writerow(["feat_"+save_recons_adj_name,"","","","","",""])
         writer.writerow([auc_mean_feat_single,val_acc_mean_feat_single,val_ap_mean_feat_single,precision_mean_feat_single,recall_mean_feat_single,HR_mean_feat_single,CLL_mean_feat_single])
 
 

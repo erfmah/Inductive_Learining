@@ -349,7 +349,7 @@ def train_PNModel(dataCenter, features, args, device):
     partial_objective = partial(train_model, dataset=dataset, epoch_number=epoch_number, model=model, graph_dgl=graph_dgl, graph_dgl_val=graph_dgl_val, feat_train=feat_train, feat_val=feat_val,  targets=targets, sampling_method=sampling_method, is_prior=is_prior, loss_type=loss_type, adj_train_org=adj_train_org, adj_val_org=adj_val_org, norm_feat=norm_feat, pos_weight_feat=pos_weight_feat, norm_feat_val=norm_feat_val, pos_weight_feat_val=pos_weight_feat_val, num_nodes=num_nodes, num_nodes_val=num_nodes_val, pos_wight=pos_wight, norm=norm, pos_wight_val=pos_wight_val, norm_val=norm_val,optimizer=optimizer )
     hyperparameter_bounds = {'lambda_1': (0.1, up_bound), 'lambda_2': (0.1, up_bound)}
     optimizer_hp = BayesianOptimization(f=partial_objective, pbounds=hyperparameter_bounds, allow_duplicate_points=True)
-    optimizer_hp.maximize(init_points=1, n_iter=10, allow_duplicate_points=True)
+    optimizer_hp.maximize(init_points=2, n_iter=5, allow_duplicate_points=True)
     model.load_state_dict(torch.load('best_model_'+dataset+'.pt'))
     lambda_1 = optimizer_hp.max['params']['lambda_1']
     lambda_2 = optimizer_hp.max['params']['lambda_2']
@@ -457,10 +457,18 @@ def train_model(lambda_1, lambda_2, dataset, epoch_number, model, graph_dgl, gra
             wtr = csv.writer(f)
             wtr.writerow([loss.item()])
 
-    y_true = (torch.flatten(feat_val)).cpu().detach().numpy()
-    y_pred = (torch.flatten(torch.sigmoid(reconstructed_feat_val))).cpu().detach().numpy()
-    auc_feat = roc_auc_score(y_score=y_pred, y_true=y_true)
-    auc_adj = roc_auc_score(y_score=y_pred, y_true=y_true)
+    y_true_feat = (torch.flatten(feat_val)).cpu().detach().numpy()
+    y_pred_feat = (torch.flatten(torch.sigmoid(reconstructed_feat_val))).cpu().detach().numpy()
+    index_sample_0_feat = np.random.choice(np.where(y_true_feat == 1)[0], 100)
+    index_sample_1_feat = np.random.choice(np.where(y_true_feat == 0)[0], 100)
+    index_sample_feat = np.concatenate((index_sample_0_feat, index_sample_1_feat))
+    auc_feat = roc_auc_score(y_score=y_pred_feat[index_sample_feat], y_true=y_true_feat[index_sample_feat])
+    y_true_adj = (torch.flatten(adj_val_org)).cpu().detach().numpy()
+    y_pred_adj = (torch.flatten(torch.sigmoid(reconstructed_adj_val))).cpu().detach().numpy()
+    index_sample_0_adj = np.random.choice(np.where(y_true_adj == 1)[0], 100)
+    index_sample_1_adj = np.random.choice(np.where(y_true_adj == 0)[0], 100)
+    index_sample_adj = np.concatenate((index_sample_0_adj, index_sample_1_adj))
+    auc_adj = roc_auc_score(y_score=y_pred_adj[index_sample_adj], y_true=y_true_adj[index_sample_adj])
     auc_val = auc_feat+auc_adj
     if best_auc < auc_val:
         best_auc = auc_val

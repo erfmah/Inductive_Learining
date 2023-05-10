@@ -775,15 +775,15 @@ def roc_auc_estimator(target_edges, reconstructed_adj, origianl_agjacency):
     return auc, acc, ap, precision, recall, HR, cll
 
 
-def roc_auc_estimator_feat(target_id, reconstructed_feat, origianl_feat):
+def roc_auc_estimator_feat(target_index_id, target_node_id, reconstructed_feat, origianl_feat):
     prediction = []
     true_label = []
     counter = 0
-    for id in target_id:
-        prediction.append(reconstructed_feat[id].item())
-        prediction.append(reconstructed_feat[id].item())
-        true_label.append(origianl_feat[id].item())
-        true_label.append(origianl_feat[id].item())
+    for node in target_node_id:
+        for id in target_index_id[counter]:
+            prediction.append(reconstructed_feat[node, id].item())
+            true_label.append(origianl_feat[node, id].item())
+        counter+=1
 
     pred = np.array(prediction)
     pred[pred > .5] = 1.0

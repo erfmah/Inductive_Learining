@@ -12,7 +12,7 @@ for j in '7'
 do
 for c in '1' '2' '3' '4' '5'
 do
-python -u pn2_main.py --dataSet "$i" --sampling_method "deterministic" --loss_type "$j" --b "$b" --c "$c"
+python -u pn2_main.py --dataSet "$i" --sampling_method "deterministic" --loss_type "$j" --c "$c"
 done
 done
 done
