@@ -361,45 +361,45 @@ def train_PNModel(dataCenter, features, args, device):
 
 
 
-    # for epoch in range(epoch_number):
-    model.train()
-    # forward propagation by using all nodes
-    std_z, m_z, z, reconstructed_adj, reconstructed_feat = model(graph_dgl, feat_train, targets, sampling_method,
-                                                                 is_prior, train=True)
-    # compute loss and accuracy
-    z_kl, reconstruction_loss, acc, val_recons_loss, loss_adj, loss_feat = optimizer_VAE_pn(lambda_1, lambda_2, loss_type,
-                                                                       reconstructed_adj,
-                                                                       reconstructed_feat,
-                                                                       adj_train_org, feat_train, norm_feat,
-                                                                       pos_weight_feat,
-                                                                       std_z, m_z, num_nodes, pos_wight, norm)
-    loss = reconstruction_loss + z_kl
+    for epoch in range(epoch_number):
+        model.train()
+        # forward propagation by using all nodes
+        std_z, m_z, z, reconstructed_adj, reconstructed_feat = model(graph_dgl, feat_train, targets, sampling_method,
+                                                                     is_prior, train=True)
+        # compute loss and accuracy
+        z_kl, reconstruction_loss, acc, val_recons_loss, loss_adj, loss_feat = optimizer_VAE_pn(lambda_1, lambda_2, loss_type,
+                                                                           reconstructed_adj,
+                                                                           reconstructed_feat,
+                                                                           adj_train_org, feat_train, norm_feat,
+                                                                           pos_weight_feat,
+                                                                           std_z, m_z, num_nodes, pos_wight, norm)
+        loss = reconstruction_loss + z_kl
 
-    # reconstructed_adj = torch.sigmoid(reconstructed_adj).detach().numpy()
-    with open('./results_csv/loss_feat_train.csv', 'a') as f:
-        wtr = csv.writer(f)
-        wtr.writerow([loss_feat.item()])
-    with open('./results_csv/loss_adj_train.csv', 'a') as f:
-        wtr = csv.writer(f)
-        wtr.writerow([loss_adj.item()])
-    with open('./results_csv/loss_train.csv', 'a') as f:
-        wtr = csv.writer(f)
-        wtr.writerow([loss.item()])
+        # reconstructed_adj = torch.sigmoid(reconstructed_adj).detach().numpy()
+        with open('./results_csv/loss_feat_train.csv', 'a') as f:
+            wtr = csv.writer(f)
+            wtr.writerow([loss_feat.item()])
+        with open('./results_csv/loss_adj_train.csv', 'a') as f:
+            wtr = csv.writer(f)
+            wtr.writerow([loss_adj.item()])
+        with open('./results_csv/loss_train.csv', 'a') as f:
+            wtr = csv.writer(f)
+            wtr.writerow([loss.item()])
 
-    model.eval()
+        model.eval()
 
-    model.train()
-    # backward propagation
-    optimizer.zero_grad()
-    loss.backward()
-    optimizer.step()
+        model.train()
+        # backward propagation
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
 
 
 
-    # print some metrics
-    print(
-        "Epoch: {:03d} | Loss: {:05f} | Reconstruction_loss: {:05f} | z_kl_loss: {:05f} | Accuracy: {:03f}".format(
-            epoch + 1, loss.item(), reconstruction_loss.item(), z_kl.item(), acc))
+        # print some metrics
+        print(
+            "Epoch: {:03d} | Loss: {:05f} | Reconstruction_loss: {:05f} | z_kl_loss: {:05f} | Accuracy: {:03f}".format(
+                epoch + 1, loss.item(), reconstruction_loss.item(), z_kl.item(), acc))
     print("lambdas:", lambda_1, lambda_2)
     model.eval()
 

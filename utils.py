@@ -766,7 +766,7 @@ def  optimizer_VAE_pn (lambda_1, lambda_2, loss_type, pred, reconstructed_feat, 
     elif loss_type == "4":
         posterior_cost = lambda_1 * (1 / (labels.shape[0]*labels.shape[1])) * posterior_cost_edges + lambda_2 * (1 / (x.shape[0]*x.shape[1])) * posterior_cost_features
     elif loss_type == "5":
-        posterior_cost = posterior_cost_features
+        posterior_cost = posterior_cost_edges
     elif loss_type == "6":
         posterior_cost = lambda_1 * (ones_adj / ones_x) * posterior_cost_edges + lambda_2 * (ones_x / ones_adj) * posterior_cost_features
     elif loss_type == "7":

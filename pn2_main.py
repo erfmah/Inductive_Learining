@@ -58,7 +58,7 @@ parser.add_argument('-num_node', dest="num_node", default=-1, type=str,
 parser.add_argument('--config', type=str, default='experiments.conf')
 parser.add_argument('-decoder_type', dest="decoder_type", default="ML_SBM",
                     help="the decoder type, Either SBM or InnerDot  or TransE or MapedInnerProduct_SBM or multi_inner_product and TransX or SBM_REL")
-parser.add_argument('--loss_type', dest="loss_type", default="7",
+parser.add_argument('--loss_type', dest="loss_type", default="5",
                     help="type of combination between loss_A and loss_F")
 
 parser.add_argument('-f', dest="use_feature", default=True, help="either use features or identity matrix")
@@ -87,7 +87,7 @@ parser.add_argument('-targets', dest="targets", default=[], help="This list is u
 parser.add_argument('--disjoint_transductive_inductive', dest="disjoint_transductive_inductive", default=True,
                     help="This flag is used if want to have dijoint transductive and inductive sets")
 parser.add_argument('--sampling_method', dest="sampling_method", default="deterministic", help="This var shows sampling method it could be: monte, importance_sampling, deterministic, normalized ")
-parser.add_argument('--method', dest="method", default="multi", help="This var shows method it could be: multi, single, subgraph")
+parser.add_argument('--method', dest="method", default="single", help="This var shows method it could be: multi, single, subgraph")
 
 
 
@@ -348,7 +348,7 @@ for i in sample_list:
                 targets.append(neighbour_id)
 
                 test_adj = torch.zeros(adj_list_copy.shape[0],adj_list_copy.shape[0])
-                std_z_prior, m_z_prior, z_prior, re_adj_prior, re_feat_prior = run_network(feat_list_copy, test_adj, inductive_pn,
+                std_z_prior, m_z_prior, z_prior, re_adj_prior, re_feat_prior = run_network(feat_list_copy, adj_list_copy, inductive_pn,
                                                                             targets, sampling_method,  is_prior=True)
                 if prior_only:
                     CVAE = CVAE_loss(m_z_prior, m_z_prior, std_z_prior, std_z_prior, re_adj_prior.detach().numpy(), org_adj,
