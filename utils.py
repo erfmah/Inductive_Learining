@@ -20,6 +20,7 @@ from numpy.random import default_rng
 from scipy.sparse import lil_matrix
 from scipy import sparse
 import dgl
+from itertools import combinations
 import torch.distributions as tdist
 from scipy.stats import multivariate_normal
 
@@ -674,6 +675,77 @@ class Datasets():
         return self.processed_adjs[index], self.processed_Xs[index]
 
 
+def get_subgraph(adj, selected_node, k):
+    k = 1
+    adj = sparse.csr_matrix(adj)
+    g = dgl.from_scipy(adj)
+    # g.add_edges(g.nodes(), g.nodes())
+    sg, inverse_indices = dgl.khop_out_subgraph(g, selected_node, k)
+
+    e_list = []
+    nodes = set()
+    for i in range(len(sg.edges()[0])):
+        source = g.edges()[0][sg.edata[dgl.EID]][i].item()
+        destination = g.edges()[1][sg.edata[dgl.EID]][i].item()
+        # if source != destination:
+        e_list.append([source, destination])
+        nodes.add(source)
+        nodes.add(destination)
+
+    # e_list = e_list[: len(e_list)//2]
+    nodes = list(nodes)
+
+    all_possible_edges = complete_subgraph_edges(nodes)
+    all_negatives = [elem for elem in all_possible_edges if elem not in e_list]
+    random.shuffle(all_negatives)
+    random.shuffle(e_list)
+
+    if len(e_list) > 2:  # use half of the existing edges as target
+        e_list = e_list[: int(1 * len(e_list))]
+
+    if len(all_negatives) >= len(e_list):
+
+        n_list = all_negatives[:len(e_list)]
+
+    # if we do not have enough negative edges, pick random negative neighbour of the target node
+    else:
+        indices = np.nonzero(adj)
+        all_edges = np.column_stack(indices)
+
+        n_list = all_negatives
+        while len(n_list) < len(e_list):
+            idx_i = selected_node
+            idx_j = np.random.randint(0, adj.shape[0])
+            if idx_i == idx_j:
+                continue
+
+            if ismember([idx_i, idx_j], np.array(e_list)):
+                continue
+
+            if ismember([idx_i, idx_j], all_edges):
+                continue
+
+            if n_list:
+                if ismember([idx_j, idx_i], np.array(n_list)):
+                    continue
+
+            n_list.append([idx_i, idx_j])
+
+    # find nodes that appeared in the negative list
+    flattened_array = np.concatenate(n_list)
+    unique_elements = np.unique(flattened_array)
+    unique_nodes = unique_elements.tolist()
+    nodes.extend(unique_nodes)
+
+    return e_list, n_list, list(set(nodes))
+def ismember(a, b, tol=5):
+    rows_close = np.all(np.round(a - b[:, None], tol) == 0, axis=-1)
+    return np.any(rows_close)
+
+def complete_subgraph_edges(nodes):
+    edges = [list(edge) for edge in combinations(nodes, 2)]
+    edges.extend([edge[::-1] for edge in edges])  # Add backward edges
+    return edges
 # objective Function
 def  optimizer_VAE_pn (lambda_1, lambda_2, loss_type, pred, reconstructed_feat, labels, x, norm_feat, pos_weight_feat,  std_z, mean_z, num_nodes, pos_weight, norm):
     val_poterior_cost = 0
@@ -694,12 +766,14 @@ def  optimizer_VAE_pn (lambda_1, lambda_2, loss_type, pred, reconstructed_feat, 
     elif loss_type == "4":
         posterior_cost = lambda_1 * (1 / (labels.shape[0]*labels.shape[1])) * posterior_cost_edges + lambda_2 * (1 / (x.shape[0]*x.shape[1])) * posterior_cost_features
     elif loss_type == "5":
-        posterior_cost = lambda_1 * posterior_cost_features
+        posterior_cost = posterior_cost_features
     elif loss_type == "6":
         posterior_cost = lambda_1 * (ones_adj / ones_x) * posterior_cost_edges + lambda_2 * (ones_x / ones_adj) * posterior_cost_features
     elif loss_type == "7":
-        posterior_cost = lambda_1 * ((x.shape[0] * x.shape[1]) / (labels.shape[0] * labels.shape[1])) * posterior_cost_edges + lambda_2 * (
-                (labels.shape[0] * labels.shape[1]) / (x.shape[0] * x.shape[1])) * posterior_cost_features
+        # posterior_cost = lambda_1 * ((x.shape[0] * x.shape[1]) / (labels.shape[0] * labels.shape[1])) * posterior_cost_edges + lambda_2 * (
+        #         (labels.shape[0] * labels.shape[1]) / (x.shape[0] * x.shape[1])) * posterior_cost_features
+        posterior_cost = ((x.shape[0] * x.shape[1]) / (labels.shape[0] * labels.shape[1])) * posterior_cost_edges + (
+                                 (labels.shape[0] * labels.shape[1]) / (x.shape[0] * x.shape[1])) * posterior_cost_features
     else:
         posterior_cost = lambda_1 * ((labels.shape[0] * labels.shape[1]) / (x.shape[0] * x.shape[1])) * posterior_cost_edges + lambda_2 * (
                 (x.shape[0] * x.shape[1]) / (labels.shape[0] * labels.shape[1])) * posterior_cost_features

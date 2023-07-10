@@ -349,7 +349,7 @@ def train_PNModel(dataCenter, features, args, device):
     partial_objective = partial(train_model, dataset=dataset, epoch_number=epoch_number, model=model, graph_dgl=graph_dgl, graph_dgl_val=graph_dgl_val, feat_train=feat_train, feat_val=feat_val,  targets=targets, sampling_method=sampling_method, is_prior=is_prior, loss_type=loss_type, adj_train_org=adj_train_org, adj_val_org=adj_val_org, norm_feat=norm_feat, pos_weight_feat=pos_weight_feat, norm_feat_val=norm_feat_val, pos_weight_feat_val=pos_weight_feat_val, num_nodes=num_nodes, num_nodes_val=num_nodes_val, pos_wight=pos_wight, norm=norm, pos_wight_val=pos_wight_val, norm_val=norm_val,optimizer=optimizer )
     hyperparameter_bounds = {'lambda_1': (0.1, up_bound), 'lambda_2': (0.1, up_bound)}
     optimizer_hp = BayesianOptimization(f=partial_objective, pbounds=hyperparameter_bounds, allow_duplicate_points=True)
-    optimizer_hp.maximize(init_points=2, n_iter=5, allow_duplicate_points=True)
+    optimizer_hp.maximize(init_points=1, n_iter=1, allow_duplicate_points=True)
     model.load_state_dict(torch.load('best_model_'+dataset+'.pt'))
     lambda_1 = optimizer_hp.max['params']['lambda_1']
     lambda_2 = optimizer_hp.max['params']['lambda_2']
@@ -361,45 +361,45 @@ def train_PNModel(dataCenter, features, args, device):
 
 
 
-    for epoch in range(epoch_number):
-        model.train()
-        # forward propagation by using all nodes
-        std_z, m_z, z, reconstructed_adj, reconstructed_feat = model(graph_dgl, feat_train, targets, sampling_method,
-                                                                     is_prior, train=True)
-        # compute loss and accuracy
-        z_kl, reconstruction_loss, acc, val_recons_loss, loss_adj, loss_feat = optimizer_VAE_pn(lambda_1, lambda_2, loss_type,
-                                                                           reconstructed_adj,
-                                                                           reconstructed_feat,
-                                                                           adj_train_org, feat_train, norm_feat,
-                                                                           pos_weight_feat,
-                                                                           std_z, m_z, num_nodes, pos_wight, norm)
-        loss = reconstruction_loss + z_kl
+    # for epoch in range(epoch_number):
+    model.train()
+    # forward propagation by using all nodes
+    std_z, m_z, z, reconstructed_adj, reconstructed_feat = model(graph_dgl, feat_train, targets, sampling_method,
+                                                                 is_prior, train=True)
+    # compute loss and accuracy
+    z_kl, reconstruction_loss, acc, val_recons_loss, loss_adj, loss_feat = optimizer_VAE_pn(lambda_1, lambda_2, loss_type,
+                                                                       reconstructed_adj,
+                                                                       reconstructed_feat,
+                                                                       adj_train_org, feat_train, norm_feat,
+                                                                       pos_weight_feat,
+                                                                       std_z, m_z, num_nodes, pos_wight, norm)
+    loss = reconstruction_loss + z_kl
 
-        # reconstructed_adj = torch.sigmoid(reconstructed_adj).detach().numpy()
-        with open('./results_csv/loss_feat_train.csv', 'a') as f:
-            wtr = csv.writer(f)
-            wtr.writerow([loss_feat.item()])
-        with open('./results_csv/loss_adj_train.csv', 'a') as f:
-            wtr = csv.writer(f)
-            wtr.writerow([loss_adj.item()])
-        with open('./results_csv/loss_train.csv', 'a') as f:
-            wtr = csv.writer(f)
-            wtr.writerow([loss.item()])
+    # reconstructed_adj = torch.sigmoid(reconstructed_adj).detach().numpy()
+    with open('./results_csv/loss_feat_train.csv', 'a') as f:
+        wtr = csv.writer(f)
+        wtr.writerow([loss_feat.item()])
+    with open('./results_csv/loss_adj_train.csv', 'a') as f:
+        wtr = csv.writer(f)
+        wtr.writerow([loss_adj.item()])
+    with open('./results_csv/loss_train.csv', 'a') as f:
+        wtr = csv.writer(f)
+        wtr.writerow([loss.item()])
 
-        model.eval()
+    model.eval()
 
-        model.train()
-        # backward propagation
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+    model.train()
+    # backward propagation
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
 
 
 
-        # print some metrics
-        print(
-            "Epoch: {:03d} | Loss: {:05f} | Reconstruction_loss: {:05f} | z_kl_loss: {:05f} | Accuracy: {:03f}".format(
-                epoch + 1, loss.item(), reconstruction_loss.item(), z_kl.item(), acc))
+    # print some metrics
+    print(
+        "Epoch: {:03d} | Loss: {:05f} | Reconstruction_loss: {:05f} | z_kl_loss: {:05f} | Accuracy: {:03f}".format(
+            epoch + 1, loss.item(), reconstruction_loss.item(), z_kl.item(), acc))
     print("lambdas:", lambda_1, lambda_2)
     model.eval()
 
