@@ -1,0 +1,9 @@
+    print("node classification:")
+
+    print("auc: ", auc_mean_labels_multi)
+    print("acc", val_acc_mean_labels_multi)
+    print("ap: ", val_ap_mean_labels_multi)
+    print("precision", precision_mean_labels_multi)
+    print("recall", recall_mean_labels_multi)
+    print("HR", HR_mean_labels_multi)
+    print("CLL", CLL_mean_labels_multi)

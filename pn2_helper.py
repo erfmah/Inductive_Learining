@@ -38,6 +38,9 @@ from scipy.optimize import minimize
 import scipy.optimize as opt
 from torchmetrics.classification import AUROC
 from sklearn.metrics import roc_auc_score, accuracy_score
+from skopt import BayesSearchCV
+from skopt.space import Real
+from skopt import gp_minimize
 
 #%% KDD model
 def train_PNModel(dataCenter, features, args, device):
@@ -74,9 +77,9 @@ def train_PNModel(dataCenter, features, args, device):
     else: 
         synthetic = False
     
-    original_adj_full= torch.FloatTensor(getattr(dataCenter, ds+'_adj_lists')).to(device)
+    original_adj_full = torch.FloatTensor(getattr(dataCenter, ds+'_adj_lists')).to(device)
 
-    node_label_full= torch.FloatTensor(getattr(dataCenter, ds+'_labels')).to(device)
+    node_label_full = torch.FloatTensor(getattr(dataCenter, ds+'_labels')).to(device)
     
     # if edge labels exist
     edge_labels = None
@@ -97,6 +100,7 @@ def train_PNModel(dataCenter, features, args, device):
     original_adj = original_adj_full[indexes, :]
     original_adj = original_adj[:, indexes]
     features = features[indexes]
+    number_of_classes = len(set(node_label_full.detach().numpy()))
     if synthetic != True:
         if node_label_full != None:
             node_label = [node_label_full[i] for i in indexes]
@@ -113,10 +117,14 @@ def train_PNModel(dataCenter, features, args, device):
     if encoder == "Multi_GCN":
         encoder_model = multi_layer_GCN(num_of_comunities , latent_dim=num_of_comunities, layers=encoder_layers)
         # encoder_model = multi_layer_GCN(in_feature=features.shape[1], latent_dim=num_of_comunities, layers=encoder_layers)
-
+    elif encoder == "Multi_GCN_2":
+        encoder_model = multi_layer_GCN_2(num_of_comunities , latent_dim=num_of_comunities, layers=encoder_layers)
     elif encoder == "Multi_GAT":
         encoder_model = multi_layer_GAT(num_of_comunities , latent_dim=num_of_comunities, layers=encoder_layers)
-        
+    elif encoder == "Multi_GAT_2":
+        encoder_model = multi_layer_GAT_2(num_of_comunities, latent_dim=num_of_comunities, layers=encoder_layers)
+    elif encoder == "Multi_GIN":
+        encoder_model = multi_layer_GIN(num_of_comunities, latent_dim=num_of_comunities, layers=encoder_layers)
     elif encoder == "Multi_RelGraphConv":
         encoder_model = multi_layer_RelGraphConv(num_of_comunities , latent_dim=num_of_comunities, layers=encoder_layers)
     
@@ -167,6 +175,8 @@ def train_PNModel(dataCenter, features, args, device):
         
     feature_decoder = feature_decoder_nn(features.shape[1], num_of_comunities)
     feature_encoder_model = feature_encoder_nn(features.view(-1, features.shape[1]), num_of_comunities)
+
+    class_decoder = MulticlassClassifier(number_of_classes, num_of_comunities)
     if use_feature == False:
         features = torch.eye(features.shape[0])
         features = sp.csr_matrix(features)
@@ -184,8 +194,11 @@ def train_PNModel(dataCenter, features, args, device):
         feat_train = feat_np[trainId, :]
         feat_val = feat_np[validId, :]
         
-        
-        
+        labels_np = np.array(node_label)
+        labels_train = labels_np[trainId]
+        labels_val = labels_np[validId]
+
+
         # adj_train , adj_val, adj_test, feat_train, feat_val, feat_test, train_true, train_false, val_true, val_false= make_test_train_gpu(
         #                 original_adj.cpu().detach().numpy(), features,
         #                 [trainId, validId, testId])
@@ -290,6 +303,7 @@ def train_PNModel(dataCenter, features, args, device):
                            decoder=decoder_model,
                            feature_decoder = feature_decoder,
                            feature_encoder = feature_encoder_model,
+                           classifier=class_decoder,
                            not_evidence = not_evidence)  # parameter namimng, it should be dimentionality of distriburion
     
 
@@ -346,67 +360,80 @@ def train_PNModel(dataCenter, features, args, device):
 
 
 
-    partial_objective = partial(train_model, dataset=dataset, epoch_number=epoch_number, model=model, graph_dgl=graph_dgl, graph_dgl_val=graph_dgl_val, feat_train=feat_train, feat_val=feat_val,  targets=targets, sampling_method=sampling_method, is_prior=is_prior, loss_type=loss_type, adj_train_org=adj_train_org, adj_val_org=adj_val_org, norm_feat=norm_feat, pos_weight_feat=pos_weight_feat, norm_feat_val=norm_feat_val, pos_weight_feat_val=pos_weight_feat_val, num_nodes=num_nodes, num_nodes_val=num_nodes_val, pos_wight=pos_wight, norm=norm, pos_wight_val=pos_wight_val, norm_val=norm_val,optimizer=optimizer )
-    hyperparameter_bounds = {'lambda_1': (0.1, up_bound), 'lambda_2': (0.1, up_bound)}
-    optimizer_hp = BayesianOptimization(f=partial_objective, pbounds=hyperparameter_bounds, allow_duplicate_points=True)
-    optimizer_hp.maximize(init_points=1, n_iter=1, allow_duplicate_points=True)
-    model.load_state_dict(torch.load('best_model_'+dataset+'.pt'))
-    lambda_1 = optimizer_hp.max['params']['lambda_1']
-    lambda_2 = optimizer_hp.max['params']['lambda_2']
-
+    partial_objective = partial(train_model, labels_train = labels_train, labels_val = labels_val, dataset=dataset, epoch_number=epoch_number, model=model, graph_dgl=graph_dgl, graph_dgl_val=graph_dgl_val, feat_train=feat_train, feat_val=feat_val,  targets=targets, sampling_method=sampling_method, is_prior=is_prior, loss_type=loss_type, adj_train_org=adj_train_org, adj_val_org=adj_val_org, norm_feat=norm_feat, pos_weight_feat=pos_weight_feat, norm_feat_val=norm_feat_val, pos_weight_feat_val=pos_weight_feat_val, num_nodes=num_nodes, num_nodes_val=num_nodes_val, pos_wight=pos_wight, norm=norm, pos_wight_val=pos_wight_val, norm_val=norm_val,optimizer=optimizer )
+    # hyperparameter_bounds = {'lambda_1': (0.1, up_bound), 'lambda_2': (0.1, up_bound), 'lambda_3': (0.1, up_bound)}
+    # hyperparameter_bounds = {'lambda_1': (0.1, up_bound), 'lambda_2': (0.1, up_bound)}
+    # optimizer_hp = BayesianOptimization(f=partial_objective, pbounds=hyperparameter_bounds, allow_duplicate_points=True)
+    # optimizer_hp.maximize(init_points=2, n_iter=5, allow_duplicate_points=True)
+    # model.load_state_dict(torch.load('best_model_'+dataset+'.pt'))
+    # lambda_1 = optimizer_hp.max['params']['lambda_1']
+    # lambda_2 = optimizer_hp.max['params']['lambda_2']
+    # #lambda_3 = optimizer_hp.max['params']['lambda_3']
     # init_guess = [1, 1]
     # bnds = ((0, 1), (0, 1))
     # res = opt.minimize(partial_objective, init_guess, method='BFGS', bounds=bnds, tol=1e-6, options={'maxiter':5})
     # lambda_1, lambda_2 = res.x
 
-
-
-    for epoch in range(epoch_number):
-        model.train()
-        # forward propagation by using all nodes
-        std_z, m_z, z, reconstructed_adj, reconstructed_feat = model(graph_dgl, feat_train, targets, sampling_method,
-                                                                     is_prior, train=True)
-        # compute loss and accuracy
-        z_kl, reconstruction_loss, acc, val_recons_loss, loss_adj, loss_feat = optimizer_VAE_pn(lambda_1, lambda_2, loss_type,
-                                                                           reconstructed_adj,
-                                                                           reconstructed_feat,
-                                                                           adj_train_org, feat_train, norm_feat,
-                                                                           pos_weight_feat,
-                                                                           std_z, m_z, num_nodes, pos_wight, norm)
-        loss = reconstruction_loss + z_kl
-
-        # reconstructed_adj = torch.sigmoid(reconstructed_adj).detach().numpy()
-        with open('./results_csv/loss_feat_train.csv', 'a') as f:
-            wtr = csv.writer(f)
-            wtr.writerow([loss_feat.item()])
-        with open('./results_csv/loss_adj_train.csv', 'a') as f:
-            wtr = csv.writer(f)
-            wtr.writerow([loss_adj.item()])
-        with open('./results_csv/loss_train.csv', 'a') as f:
-            wtr = csv.writer(f)
-            wtr.writerow([loss.item()])
-
-        model.eval()
-
-        model.train()
-        # backward propagation
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+    search_space = [
+        Real(0.01, 1, name='lambda_1'),  # Adjust the range as needed
+        Real(0.01, 1, name='lambda_2')  # Adjust the range as needed
+    ]
+    result = gp_minimize(
+        func=partial_objective,
+        dimensions=search_space,
+        n_calls=10,  # Number of function calls (iterations)
+        random_state=42,  # Set a random seed for reproducibility
+        n_initial_points=10
+    )
 
 
 
-        # print some metrics
-        print(
-            "Epoch: {:03d} | Loss: {:05f} | Reconstruction_loss: {:05f} | z_kl_loss: {:05f} | Accuracy: {:03f}".format(
-                epoch + 1, loss.item(), reconstruction_loss.item(), z_kl.item(), acc))
-    print("lambdas:", lambda_1, lambda_2)
+    # for epoch in range(epoch_number):
+    model.train()
+    # forward propagation by using all nodes
+    std_z, m_z, z, reconstructed_adj, reconstructed_feat, re_labels = model(graph_dgl, feat_train, labels_train, targets, sampling_method,
+                                                                 is_prior, train=True)
+    # compute loss and accuracy
+    z_kl, reconstruction_loss, acc, val_recons_loss, loss_adj, loss_feat = optimizer_VAE_pn(lambda_1, lambda_2, labels_train, re_labels, loss_type,
+                                                                       reconstructed_adj,
+                                                                       reconstructed_feat,
+                                                                       adj_train_org, feat_train, norm_feat,
+                                                                       pos_weight_feat,
+                                                                       std_z, m_z, num_nodes, pos_wight, norm)
+    loss = reconstruction_loss + z_kl
+
+    # reconstructed_adj = torch.sigmoid(reconstructed_adj).detach().numpy()
+    with open('./results_csv/loss_feat_train.csv', 'a') as f:
+        wtr = csv.writer(f)
+        wtr.writerow([loss_feat.item()])
+    with open('./results_csv/loss_adj_train.csv', 'a') as f:
+        wtr = csv.writer(f)
+        wtr.writerow([loss_adj.item()])
+    with open('./results_csv/loss_train.csv', 'a') as f:
+        wtr = csv.writer(f)
+        wtr.writerow([loss.item()])
+
+    model.eval()
+
+    model.train()
+    # backward propagation
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
+
+
+
+    # print some metrics
+    print(
+        "Epoch: {:03d} | Loss: {:05f} | Reconstruction_loss: {:05f} | z_kl_loss: {:05f} | Accuracy: {:03f}".format(
+             1, loss.item(), reconstruction_loss.item(), z_kl.item(), acc))
+    print("lambdas:", result.x)
     model.eval()
 
     return model, z
 
-def train_model(lambda_1, lambda_2, dataset, epoch_number, model, graph_dgl, graph_dgl_val, feat_train, feat_val,  targets, sampling_method, is_prior, loss_type, adj_train_org, adj_val_org, norm_feat, pos_weight_feat, norm_feat_val, pos_weight_feat_val, num_nodes, num_nodes_val, pos_wight, norm, pos_wight_val, norm_val,optimizer ):
-    # lambda_1, lambda_2 = params
+def train_model(params, labels_train, labels_val, dataset, epoch_number, model, graph_dgl, graph_dgl_val, feat_train, feat_val,  targets, sampling_method, is_prior, loss_type, adj_train_org, adj_val_org, norm_feat, pos_weight_feat, norm_feat_val, pos_weight_feat_val, num_nodes, num_nodes_val, pos_wight, norm, pos_wight_val, norm_val,optimizer ):
+    lambda_1, lambda_2 = params
     best_auc = 0
     with open('./results_csv/best_auc.csv', newline='') as f:
         reader = csv.DictReader(f)
@@ -418,10 +445,10 @@ def train_model(lambda_1, lambda_2, dataset, epoch_number, model, graph_dgl, gra
     for epoch in range(epoch_number):
         model.train()
         # forward propagation by using all nodes
-        std_z, m_z, z, reconstructed_adj, reconstructed_feat = model(graph_dgl, feat_train, targets, sampling_method,
+        std_z, m_z, z, reconstructed_adj, reconstructed_feat, re_labels = model(graph_dgl, feat_train, labels_train, targets, sampling_method,
                                                                      is_prior, train=True)
         # compute loss and accuracy
-        z_kl, reconstruction_loss, acc, val_recons_loss, loss_adj, loss_feat = optimizer_VAE_pn(lambda_1, lambda_2,loss_type, reconstructed_adj,
+        z_kl, reconstruction_loss, acc, val_recons_loss, loss_adj, loss_feat = optimizer_VAE_pn(lambda_1, lambda_2, labels_train, re_labels, loss_type, reconstructed_adj,
                                                                            reconstructed_feat,
                                                                            adj_train_org, feat_train, norm_feat,
                                                                            pos_weight_feat,
@@ -445,9 +472,9 @@ def train_model(lambda_1, lambda_2, dataset, epoch_number, model, graph_dgl, gra
     model.eval()
     with torch.no_grad():
 
-        std_z_val, m_z_val, z_val, reconstructed_adj_val, reconstructed_feat_val = model(graph_dgl_val, feat_val, targets, sampling_method,
+        std_z_val, m_z_val, z_val, reconstructed_adj_val, reconstructed_feat_val, re_labels_val = model(graph_dgl_val, feat_val, labels_val, targets,  sampling_method,
                                                                  is_prior, train=True)
-        z_kl_val, val_reconstruction_loss, val_acc, val_recons_loss, loss_adj, loss_feat = optimizer_VAE_pn(lambda_1, lambda_2, loss_type, reconstructed_adj_val,
+        z_kl_val, val_reconstruction_loss, val_acc, val_recons_loss, loss_adj, loss_feat = optimizer_VAE_pn(lambda_1, lambda_2, labels_val, re_labels_val, loss_type, reconstructed_adj_val,
                                                                        reconstructed_feat_val,
                                                                        adj_val_org, feat_val, norm_feat_val,
                                                                        pos_weight_feat_val,
@@ -463,13 +490,18 @@ def train_model(lambda_1, lambda_2, dataset, epoch_number, model, graph_dgl, gra
     index_sample_1_feat = np.random.choice(np.where(y_true_feat == 0)[0], 100)
     index_sample_feat = np.concatenate((index_sample_0_feat, index_sample_1_feat))
     auc_feat = roc_auc_score(y_score=y_pred_feat[index_sample_feat], y_true=y_true_feat[index_sample_feat])
+
     y_true_adj = (torch.flatten(adj_val_org)).cpu().detach().numpy()
     y_pred_adj = (torch.flatten(torch.sigmoid(reconstructed_adj_val))).cpu().detach().numpy()
     index_sample_0_adj = np.random.choice(np.where(y_true_adj == 1)[0], 100)
     index_sample_1_adj = np.random.choice(np.where(y_true_adj == 0)[0], 100)
     index_sample_adj = np.concatenate((index_sample_0_adj, index_sample_1_adj))
     auc_adj = roc_auc_score(y_score=y_pred_adj[index_sample_adj], y_true=y_true_adj[index_sample_adj])
-    auc_val = auc_feat+auc_adj
+
+    acc_labels = accuracy_score(y_pred=torch.argmax(re_labels_val,dim = 1), y_true=labels_val, normalize=True)
+
+    # auc_val = auc_feat+auc_adj+acc_labels
+    auc_val = -1*(auc_feat + auc_adj)
     if best_auc < auc_val:
         best_auc = auc_val
         torch.save(model.state_dict(), 'best_model_' + dataset + '.pt')
@@ -478,7 +510,7 @@ def train_model(lambda_1, lambda_2, dataset, epoch_number, model, graph_dgl, gra
             wtr.writerow([best_auc])
 
     #return -1*(val_loss_total)
-    return auc_val
+    return val_reconstruction_loss.item()
 
 
 

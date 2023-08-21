@@ -1,0 +1,8 @@
+    print("\nsingle link")
+    print("auc_labels: ", auc_mean_labels_single)
+    print("acc_labels", val_acc_mean_labels_single)
+    print("ap_labels: ", val_ap_mean_labels_single)
+    print("precision_labels", precision_mean_labels_single)
+    print("recall_labels", recall_mean_labels_single)
+    print("HR_labels", HR_mean_labels_single)
+    print("CLL_labels", CLL_mean_labels_single)

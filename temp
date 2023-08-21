@@ -1,0 +1,28 @@
+    # CLL_mean_feat_subgraph = statistics.mean(CLL_list_feat_subgraph)
+    CLL_mean_feat_subgraph = 0
+    with open('./results_csv/results.csv', 'a', newline="\n") as f:
+        writer = csv.writer(f)
+        # writer.writerow([save_recons_adj_name,"","","","","",""])
+        writer.writerow([save_recons_adj_name, auc_mean_subgraph, val_acc_mean_subgraph, val_ap_mean_subgraph, precision_mean_subgraph, recall_mean_subgraph, HR_mean_subgraph, CLL_mean_subgraph])
+        writer.writerow(["feat_"+save_recons_adj_name, auc_mean_feat_subgraph, val_acc_mean_feat_subgraph, val_ap_mean_feat_subgraph, precision_mean_feat_subgraph,
+             recall_mean_feat_subgraph, HR_mean_feat_subgraph, CLL_mean_feat_subgraph])
+
+    print("multi link")
+    print("link prediction:")
+    print("auc: ", auc_mean_subgraph)
+    print("acc", val_acc_mean_subgraph)
+    print("ap: ", val_ap_mean_subgraph)
+    print("precision", precision_mean_subgraph)
+    print("recall", recall_mean_subgraph)
+    print("HR", HR_mean_subgraph)
+    print("CLL", CLL_mean_subgraph)
+
+    print("feature prediction:")
+
+    print("auc: ", auc_mean_feat_subgraph)
+    print("acc", val_acc_mean_feat_subgraph)
+    print("ap: ", val_ap_mean_feat_subgraph)
+    print("precision", precision_mean_feat_subgraph)
+    print("recall", recall_mean_feat_subgraph)
+    print("HR", HR_mean_feat_subgraph)
+    print("CLL", CLL_mean_feat_subgraph)

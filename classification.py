@@ -47,15 +47,15 @@ def knn(features, labels):
 
 
 def logistiic_regression(features, labels):
-    features_train, features_test, labels_train, labels_test = train_test_split(features, labels, test_size=0.33, random_state=42) 
+    # features_train, features_test, labels_train, labels_test = train_test_split(features, labels, test_size=0.33, random_state=42)
                                                                 #split into test and train
     clf = LogisticRegressionCV(
          Cs=10, cv=10, scoring="accuracy", verbose=False, multi_class="ovr", max_iter=10000
     )
-    clf.fit(features_train, labels_train)
-    labels_pred = clf.predict(features_test)
-    return get_metrices(labels_test, labels_pred), clf
-
+    clf.fit(features, labels)
+    labels_pred = clf.predict(features)
+    # return get_metrices(labels_test, labels_pred), clf
+    return labels_pred
 
 def logistic_regression_all(features, labels, verb = False):                                                              #split into test and train
     clf = LogisticRegressionCV(
@@ -188,7 +188,7 @@ def NN(features, labels):
             labels_test=torch.cat([labels_test,labels.view(-1).cpu()])
      
     result = get_metrices(labels_test, labels_pred)
-    return result , model
+    return labels_pred
 
 def NN_all(features, labels, num_epochs = 200, batch_size = 64, learning_rate = 0.01):
 

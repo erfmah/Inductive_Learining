@@ -15,7 +15,7 @@ from torch.autograd import Variable
 from torch.nn import init
 import time
 import csv
-
+import classification as CL
 import numpy as np
 from scipy.stats import multivariate_normal
 
@@ -487,6 +487,181 @@ class multi_layer_GCN(torch.nn.Module):
 
         self.q_z_std = GraphConv(layers[-1], latent_dim, activation=None, bias=False, weight=True)
 
+        self.generate_z = feature_decoder_nn(latent_dim, latent_dim)
+
+    def forward(self, adj, x):
+        dropout = torch.nn.Dropout(0)
+        for conv_layer in self.ConvLayers:
+            x = torch.tanh(conv_layer(adj, x))
+            x = dropout(x)
+
+        m_q_z = self.q_z_mean(adj, x)
+        std_q_z = torch.relu(self.q_z_std(adj, x)) + .0001
+
+        z = self.reparameterize(m_q_z, std_q_z)
+        #z = self.generate_z(z)
+        return z, m_q_z, std_q_z,
+
+    def reparameterize(self, mean, std):
+        eps = torch.randn_like(std)
+        return eps.mul(std).add(mean)
+
+class multi_layer_GCN_2(torch.nn.Module):
+    def __init__(self, in_feature, latent_dim=32, layers=[64]):
+        """
+        :param in_feature: the size of input feature; X.shape()[1]
+        :param latent_dim: the dimention of each embedded node; |z| or len(z)
+        :param layers: a list in which each element determine the size of corresponding GCNN Layer.
+        """
+        super(multi_layer_GCN_2, self).__init__()
+        layers = [in_feature] + layers
+        if len(layers) < 1: raise Exception("sorry, you need at least two layer")
+        self.ConvLayers = torch.nn.ModuleList(
+            GraphConv(layers[i], layers[i + 1], activation=None, bias=False, weight=True) for i in
+            range(len(layers) - 1))
+
+        self.additional_layer = GraphConv(layers[-1], layers[-1], activation=None, bias=False, weight=True)
+
+        self.q_z_mean = GraphConv(layers[-1], latent_dim, activation=None, bias=False, weight=True)
+
+        self.q_z_std = GraphConv(layers[-1], latent_dim, activation=None, bias=False, weight=True)
+
+        self.generate_z = feature_decoder_nn(latent_dim, latent_dim)
+
+    def forward(self, adj, x):
+        dropout = torch.nn.Dropout(0)
+        for conv_layer in self.ConvLayers:
+            x = torch.tanh(conv_layer(adj, x))
+            x = dropout(x)
+
+        x = self.additional_layer(adj,x)
+
+        m_q_z = self.q_z_mean(adj, x)
+        std_q_z = torch.relu(self.q_z_std(adj, x)) + .0001
+
+        z = self.reparameterize(m_q_z, std_q_z)
+        z = self.generate_z(z)
+        return z, m_q_z, std_q_z,
+
+    def reparameterize(self, mean, std):
+        eps = torch.randn_like(std)
+        return eps.mul(std).add(mean)
+
+
+class multi_layer_GAT(torch.nn.Module):
+    def __init__(self, in_feature, latent_dim=128, layers=[64, 64]):
+        """
+        :param in_feature: the size of input feature; X.shape()[1]
+        :param latent_dim: the dimention of each embedded node; |z| or len(z)
+        :param layers: a list in which each element determine the size of corresponding GCNN Layer.
+        """
+        super(multi_layer_GAT, self).__init__()
+        layers = [in_feature] + layers
+        self.num_head = 4
+        latent_dim =int(latent_dim/(self.num_head**2))
+
+        if len(layers) < 1: raise Exception("sorry, you need at least two layer")
+        self.ConvLayers = torch.nn.ModuleList(
+            GATConv(layers[i] , layers[i + 1], activation=None, bias=False, num_heads=self.num_head) for i in
+            range(len(layers) - 1))
+
+        self.q_z_mean = GATConv(layers[-1], latent_dim, activation=None, bias=False, num_heads=self.num_head)
+
+        self.q_z_std = GATConv(layers[-1], latent_dim, activation=None, bias=False, num_heads=self.num_head )
+
+        self.generate_z = feature_decoder_nn(latent_dim*self.num_head*self.num_head,latent_dim*self.num_head*self.num_head)
+    def forward(self, adj, x):
+        dropout = torch.nn.Dropout(0)
+        for conv_layer in self.ConvLayers:
+            x = torch.tanh(conv_layer(adj, x))
+            x = dropout(x)
+
+        m_q_z = self.q_z_mean(adj, x)
+        std_q_z = torch.relu(self.q_z_std(adj, x)) + .0001
+
+        m_q_z_flatten = torch.flatten(m_q_z, start_dim=1)
+        std_q_z_flatten = torch.flatten(std_q_z, start_dim=1)
+
+
+        z = self.reparameterize(m_q_z_flatten, std_q_z_flatten)
+        #z = self.generate_z(z)
+        return z, m_q_z_flatten, std_q_z_flatten
+    def reparameterize(self, mean, std):
+        eps = torch.randn_like(std)
+        return eps.mul(std).add(mean)
+
+
+class multi_layer_GAT_2(nn.Module):
+    def __init__(self, in_feature, latent_dim=128, layers=[64]):
+        """
+        :param in_feature: the size of input feature; X.shape()[1]
+        :param latent_dim: the dimension of each embedded node; |z| or len(z)
+        :param layers: a list in which each element determines the size of corresponding GCN Layer.
+        """
+        super(multi_layer_GAT_2, self).__init__()
+        layers = [in_feature] + layers
+        self.num_head = 4
+        latent_dim = int(latent_dim / (self.num_head ** 2))
+
+        if len(layers) < 1:
+            raise Exception("Sorry, you need at least two layers")
+
+        self.ConvLayers = nn.ModuleList(
+            GATConv(layers[i], layers[i + 1], activation=None, bias=False, num_heads=self.num_head) for i in
+            range(len(layers) - 1))
+
+        self.additional_layer = GATConv(layers[-1]*self.num_head, latent_dim, activation=None, bias=False,
+                                        num_heads=self.num_head)
+
+        self.q_z_mean = GATConv(layers[-1], latent_dim*self.num_head, activation=None, bias=False, num_heads=self.num_head)
+        self.q_z_std = GATConv(layers[-1], latent_dim*self.num_head, activation=None, bias=False, num_heads=self.num_head)
+
+        #self.generate_z = feature_decoder_nn(latent_dim*self.num_head*self.num_head, latent_dim*self.num_head*self.num_head)
+    def forward(self, adj, x):
+        dropout = nn.Dropout(0)
+        for conv_layer in self.ConvLayers:
+            x = torch.tanh(conv_layer(adj, x))
+            x = dropout(x)
+
+        # Apply the additional GATConv layer
+        x = torch.flatten(x, start_dim=1)
+        x = torch.tanh(self.additional_layer(adj, x))
+        x = dropout(x)
+
+        x = torch.flatten(x, start_dim=1)
+        m_q_z = self.q_z_mean(adj, x)
+        std_q_z = torch.relu(self.q_z_std(adj, x)) + .0001
+
+        m_q_z_flatten = torch.flatten(m_q_z, start_dim=1)
+        std_q_z_flatten = torch.flatten(std_q_z, start_dim=1)
+
+        z = self.reparameterize(m_q_z_flatten, std_q_z_flatten)
+        #z = self.generate_z(z)
+        return z, m_q_z_flatten, std_q_z_flatten
+
+    def reparameterize(self, mean, std):
+        eps = torch.randn_like(std)
+        return eps.mul(std).add(mean)
+
+
+class multi_layer_GIN(torch.nn.Module):
+    def __init__(self, in_feature, latent_dim=32, layers=[64]):
+        """
+        :param in_feature: the size of input feature; X.shape()[1]
+        :param latent_dim: the dimention of each embedded node; |z| or len(z)
+        :param layers: a list in which each element determine the size of corresponding GCNN Layer.
+        """
+        super(multi_layer_GIN, self).__init__()
+        layers = [in_feature] + layers
+        if len(layers) < 1: raise Exception("sorry, you need at least two layer")
+        self.ConvLayers = torch.nn.ModuleList(
+            GINConv(th.nn.Linear(in_feature, latent_dim), 'max') for i in
+            range(len(layers) - 1))
+
+        self.q_z_mean = GINConv(th.nn.Linear(in_feature, latent_dim), 'max')
+
+        self.q_z_std = GINConv(th.nn.Linear(in_feature, latent_dim), 'max')
+
     def forward(self, adj, x):
         dropout = torch.nn.Dropout(0)
         for conv_layer in self.ConvLayers:
@@ -502,53 +677,6 @@ class multi_layer_GCN(torch.nn.Module):
     def reparameterize(self, mean, std):
         eps = torch.randn_like(std)
         return eps.mul(std).add(mean)
-
-
-
-
-
-class multi_layer_GAT(torch.nn.Module):
-    def __init__(self, in_feature, latent_dim=32, layers=[64]):
-        """
-        :param in_feature: the size of input feature; X.shape()[1]
-        :param latent_dim: the dimention of each embedded node; |z| or len(z)
-        :param layers: a list in which each element determine the size of corresponding GCNN Layer.
-        """
-        super(multi_layer_GAT, self).__init__()
-        layers = [in_feature] + layers
-        self.num_head = 8
-        latent_dim =int(latent_dim/(8**2))
-        
-        if len(layers) < 1: raise Exception("sorry, you need at least two layer")
-        self.ConvLayers = torch.nn.ModuleList(
-            GATConv(layers[i], layers[i + 1], activation=None, bias=False, num_heads=self.num_head) for i in
-            range(len(layers) - 1))
-
-        self.q_z_mean = GATConv(layers[-1], latent_dim, activation=None, bias=False, num_heads=self.num_head)
-
-        self.q_z_std = GATConv(layers[-1], latent_dim, activation=None, bias=False, num_heads=self.num_head )
-
-    def forward(self, adj, x):
-        dropout = torch.nn.Dropout(0)
-        for conv_layer in self.ConvLayers:
-            x = torch.tanh(conv_layer(adj, x))
-            x = dropout(x)
-
-        m_q_z = self.q_z_mean(adj, x)
-        std_q_z = torch.relu(self.q_z_std(adj, x)) + .0001
-        
-        m_q_z_flatten = torch.flatten(m_q_z, start_dim=1)
-        std_q_z_flatten = torch.flatten(std_q_z, start_dim=1)
- 
-
-        z = self.reparameterize(m_q_z_flatten, std_q_z_flatten)
-        return z, m_q_z_flatten, std_q_z_flatten
-
-    def reparameterize(self, mean, std):
-        eps = torch.randn_like(std)
-        return eps.mul(std).add(mean)
-
-
 
 
 class multi_layer_GINE(torch.nn.Module):
@@ -1344,7 +1472,7 @@ class MultiLatetnt_SBM_decoder(torch.nn.Module):
 
 
 class PN_FrameWork(torch.nn.Module):
-    def __init__(self, latent_dim, encoder, decoder, feature_decoder,  feature_encoder, not_evidence, mlp_decoder=False, layesrs=None):
+    def __init__(self, latent_dim, encoder, decoder, feature_decoder,  feature_encoder, classifier,  not_evidence, mlp_decoder=False, layesrs=None):
         """
         :param latent_dim: the dimention of each embedded node; |z| or len(z)
         :param decoder:
@@ -1359,6 +1487,7 @@ class PN_FrameWork(torch.nn.Module):
         self.feature_encoder = feature_encoder
         self.not_evidence = not_evidence
         self.feature_decoder = feature_decoder
+        self.classifier = classifier
         self.mq = None
         self.sq = None
         # self.is_prior = is_prior
@@ -1369,17 +1498,16 @@ class PN_FrameWork(torch.nn.Module):
         self.dropout = torch.nn.Dropout(0)
         self.reset_parameters()
 
-    def forward(self, adj, x, targets, sampling_method, is_prior, train=True):
+    def forward(self, adj, x, labels, targets, sampling_method, is_prior, train=True):
 
         if train:
 
             z_0 = self.get_z(x, self.latent_dim)  # attribute encoder
             z, m_z, std_z = self.inference(adj, z_0) # link encoder
 
-
-            
             generated_adj = self.generator(z)  # link decoder
             generated_feat = self.generator_feat(z)
+            generated_classes = self.classifier(z)
         else:
             z_0 = self.get_z(x, self.latent_dim)  # attribute encoder
 
@@ -1390,6 +1518,7 @@ class PN_FrameWork(torch.nn.Module):
 
             generated_adj = self.generator(z)  # link decoder
             generated_feat = self.generator_feat(z)
+            generated_classes = self.classifier(z)
             if is_prior:
                 
                 if sampling_method == "normalized":
@@ -1429,7 +1558,7 @@ class PN_FrameWork(torch.nn.Module):
 
         # z = self.dropout(z)
 
-        return std_z, m_z, z, generated_adj, generated_feat
+        return std_z, m_z, z, generated_adj, generated_feat, generated_classes
 
     def run_monte(self, generated_adj, x, adj, targets):
         # if we use Monte Carlo sampling
@@ -1715,29 +1844,21 @@ class feature_decoder_nn(torch.nn.Module):
         """
         super(feature_decoder_nn, self).__init__()
         self.leakyRelu = nn.LeakyReLU()
-
-        # self.l1 = nn.Linear(in_features=in_feature.shape[1], out_features=latent_dim)
-
         self.decoder = nn.Linear(in_features=latent_dim, out_features=out_feature)
 
-    # def forward(self, x):
-    #     h1 = self.leakyRelu(self.l1(x))
-    #     return h1
-
     def forward(self, z):
-
-
         re_feature = self.decoder(z)
 
         return re_feature
-    #     self.fc1 = nn.Linear(in_features=128, out_features=1433)
-    #     self.activation = nn.ReLU()
-    # # def forward(self, x):
-    # #     h1 = self.leakyRelu(self.l1(x))
-    # #     return h1
-    #
-    # def forward(self, z):
-    #     z = self.fc1(z)
-    #     re_feature = self.activation(z)
-    #
-    #     return re_feature
+
+class MulticlassClassifier(nn.Module):
+    def __init__(self, output_dim, input_dim=128):
+        super(MulticlassClassifier, self).__init__()
+        # self.fc1 = nn.Linear(input_dim, hidden_dim)
+        # self.relu = nn.LeakyReLU()
+        self.fc2 = nn.Linear(input_dim, output_dim)
+
+    def forward(self, x):
+        # x = self.relu(x)
+        x = self.fc2(x)
+        return torch.softmax(x, dim=-1)
