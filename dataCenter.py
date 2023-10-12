@@ -61,6 +61,8 @@ class DataCenter():
             numerical_classes = labels.reshape(-1, 1)
             labels = encoder.fit_transform(numerical_classes)
 
+
+
         # test_indexs, val_indexs, train_indexs = self._split_data(labels)
 
             setattr(self, dataSet+'_test', test_indexs)
@@ -103,7 +105,13 @@ class DataCenter():
             labels = np.vstack((ally, ty))
             labels[test_idx_reorder, :] = labels[test_idx_range, :]
 
-            test_indexs, val_indexs, train_indexs = self._split_data(features.shape[0])
+            labels = np.asarray(torch.argmax(torch.from_numpy(labels), dim=1), dtype=np.int64)
+            test_indexs, val_indexs, train_indexs = self._split_data(labels)
+            encoder = OneHotEncoder(sparse=False)
+            numerical_classes = labels.reshape(-1, 1)
+            labels = encoder.fit_transform(numerical_classes)
+
+            # test_indexs, val_indexs, train_indexs = self._split_data(features.shape[0])
 
             setattr(self, dataSet+'_test', test_indexs)
             setattr(self, dataSet+'_val', val_indexs)

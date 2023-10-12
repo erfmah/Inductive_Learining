@@ -44,7 +44,7 @@ warnings.simplefilter('ignore')
 
 
 parser = argparse.ArgumentParser(description='Inductive')
-parser.add_argument('--dataSet', type=str, default='computers')
+parser.add_argument('--dataSet', type=str, default='CiteSeer')
 parser.add_argument('-e', dest="epoch_number", default=100 , help="Number of Epochs")
 parser.add_argument('-mask', dest="mask", default=0, help="mask with this value during testing")
 parser.add_argument('--alpha', dest="alpha", default=0, help="alpha in objective function")
