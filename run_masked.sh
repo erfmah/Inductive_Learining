@@ -18,3 +18,5 @@ done
 done
 done
 done
+
+python  pn2_main.py --dataSet "Cora" --loss_type "5" --encoder_type "Multi_GIN" --query_type "both"
