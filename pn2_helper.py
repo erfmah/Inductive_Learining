@@ -80,7 +80,7 @@ def train_PNModel(dataCenter, features, args, device):
     original_adj_full = torch.FloatTensor(getattr(dataCenter, ds+'_adj_lists')).to(device)
 
     node_label_full = torch.FloatTensor(getattr(dataCenter, ds+'_labels')).to(device)
-    
+    # torch.Size([3480, 121])
     # if edge labels exist
     edge_labels = None
     if ds == 'IMDB' or ds == 'ACM' or ds == 'DBLP':
@@ -100,10 +100,11 @@ def train_PNModel(dataCenter, features, args, device):
     original_adj = original_adj_full[indexes, :]
     original_adj = original_adj[:, indexes]
     features = features[indexes]
-    number_of_classes = len(set(node_label_full.detach().numpy()))
+
+    number_of_classes = len(node_label_full[0])
     if synthetic != True:
         if node_label_full != None:
-            node_label = [node_label_full[i] for i in indexes]
+            node_label = [np.array(node_label_full[i], dtype=np.float16) for i in indexes]
         if edge_labels != None:
             edge_labels = edge_labels[indexes, :]
             edge_labels = edge_labels[:, indexes]
@@ -194,7 +195,7 @@ def train_PNModel(dataCenter, features, args, device):
         feat_train = feat_np[trainId, :]
         feat_val = feat_np[validId, :]
         
-        labels_np = np.array(node_label)
+        labels_np = np.array(node_label, dtype=np.float16)
         labels_train = labels_np[trainId]
         labels_val = labels_np[validId]
 
@@ -349,12 +350,9 @@ def train_PNModel(dataCenter, features, args, device):
     pos_weight_feat_val = torch.true_divide((feat_val.shape[0]*feat_val.shape[1]-torch.sum(feat_val)),torch.sum(feat_val))
     norm_feat_val = torch.true_divide((feat_val.shape[0]*feat_val.shape[1]),(2*(feat_val.shape[0]*feat_val.shape[1]-torch.sum(feat_val))))
 
-    with open('./results_csv/best_auc.csv', 'w') as f:
-        wtr = csv.writer(f)
-        wtr.writerow(['auc'])
-
-    lambda_1 = 1
-    lambda_2 = 1
+    # lambda_1 = 0
+    # lambda_2 = 1
+    # lambda_3 = 1
     # hyperparameter_bounds = [(0, 1), (0, 1)]
     # result = minimize(objective, hyperparameter_bounds, method='L-BFGS-B')
 
@@ -362,7 +360,7 @@ def train_PNModel(dataCenter, features, args, device):
 
     partial_objective = partial(train_model, labels_train = labels_train, labels_val = labels_val, dataset=dataset, epoch_number=epoch_number, model=model, graph_dgl=graph_dgl, graph_dgl_val=graph_dgl_val, feat_train=feat_train, feat_val=feat_val,  targets=targets, sampling_method=sampling_method, is_prior=is_prior, loss_type=loss_type, adj_train_org=adj_train_org, adj_val_org=adj_val_org, norm_feat=norm_feat, pos_weight_feat=pos_weight_feat, norm_feat_val=norm_feat_val, pos_weight_feat_val=pos_weight_feat_val, num_nodes=num_nodes, num_nodes_val=num_nodes_val, pos_wight=pos_wight, norm=norm, pos_wight_val=pos_wight_val, norm_val=norm_val,optimizer=optimizer )
     # hyperparameter_bounds = {'lambda_1': (0.1, up_bound), 'lambda_2': (0.1, up_bound), 'lambda_3': (0.1, up_bound)}
-    # hyperparameter_bounds = {'lambda_1': (0.1, up_bound), 'lambda_2': (0.1, up_bound)}
+    # hyperparameter_bounds = {'lambda_1': (0.1, up_bound)}
     # optimizer_hp = BayesianOptimization(f=partial_objective, pbounds=hyperparameter_bounds, allow_duplicate_points=True)
     # optimizer_hp.maximize(init_points=2, n_iter=5, allow_duplicate_points=True)
     # model.load_state_dict(torch.load('best_model_'+dataset+'.pt'))
@@ -376,64 +374,51 @@ def train_PNModel(dataCenter, features, args, device):
 
     search_space = [
         Real(0.01, 1, name='lambda_1'),  # Adjust the range as needed
-        Real(0.01, 1, name='lambda_2')  # Adjust the range as needed
+        Real(0.01, 1, name='lambda_2'), # Adjust the range as needed
+        Real(0.01, 1, name='lambda_3')  # Adjust the range as needed
     ]
     result = gp_minimize(
         func=partial_objective,
         dimensions=search_space,
         n_calls=10,  # Number of function calls (iterations)
-        random_state=42,  # Set a random seed for reproducibility
+        random_state=10,  # Set a random seed for reproducibility
         n_initial_points=10
     )
 
+    lambda_1, lambda_2, lambda_3 = result.x
 
+    for epoch in range(epoch_number):
+        model.train()
+        # forward propagation by using all nodes
+        std_z, m_z, z, reconstructed_adj, reconstructed_feat, re_labels = model(graph_dgl, feat_train, labels_train, targets, sampling_method,
+                                                                     is_prior, train=True)
+        # compute loss and accuracy
+        z_kl, reconstruction_loss, acc, val_recons_loss, loss_adj, loss_feat = optimizer_VAE_pn(lambda_1, lambda_2,lambda_3, labels_train, re_labels, loss_type,
+                                                                           reconstructed_adj,
+                                                                           reconstructed_feat,
+                                                                           adj_train_org, feat_train, norm_feat,
+                                                                           pos_weight_feat,
+                                                                           std_z, m_z, num_nodes, pos_wight, norm)
+        loss = reconstruction_loss + z_kl
 
-    # for epoch in range(epoch_number):
-    model.train()
-    # forward propagation by using all nodes
-    std_z, m_z, z, reconstructed_adj, reconstructed_feat, re_labels = model(graph_dgl, feat_train, labels_train, targets, sampling_method,
-                                                                 is_prior, train=True)
-    # compute loss and accuracy
-    z_kl, reconstruction_loss, acc, val_recons_loss, loss_adj, loss_feat = optimizer_VAE_pn(lambda_1, lambda_2, labels_train, re_labels, loss_type,
-                                                                       reconstructed_adj,
-                                                                       reconstructed_feat,
-                                                                       adj_train_org, feat_train, norm_feat,
-                                                                       pos_weight_feat,
-                                                                       std_z, m_z, num_nodes, pos_wight, norm)
-    loss = reconstruction_loss + z_kl
-
-    # reconstructed_adj = torch.sigmoid(reconstructed_adj).detach().numpy()
-    with open('./results_csv/loss_feat_train.csv', 'a') as f:
-        wtr = csv.writer(f)
-        wtr.writerow([loss_feat.item()])
-    with open('./results_csv/loss_adj_train.csv', 'a') as f:
-        wtr = csv.writer(f)
-        wtr.writerow([loss_adj.item()])
-    with open('./results_csv/loss_train.csv', 'a') as f:
-        wtr = csv.writer(f)
-        wtr.writerow([loss.item()])
-
-    model.eval()
-
-    model.train()
-    # backward propagation
-    optimizer.zero_grad()
-    loss.backward()
-    optimizer.step()
+        # backward propagation
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
 
 
 
-    # print some metrics
-    print(
-        "Epoch: {:03d} | Loss: {:05f} | Reconstruction_loss: {:05f} | z_kl_loss: {:05f} | Accuracy: {:03f}".format(
-             1, loss.item(), reconstruction_loss.item(), z_kl.item(), acc))
-    print("lambdas:", result.x)
+        # print some metrics
+        print(
+            "Epoch: {:03d} | Loss: {:05f} | Reconstruction_loss: {:05f} | z_kl_loss: {:05f} | Accuracy: {:03f}".format(
+                 1, loss.item(), reconstruction_loss.item(), z_kl.item(), acc))
+        print("lambdas:", result.x)
     model.eval()
 
     return model, z
 
 def train_model(params, labels_train, labels_val, dataset, epoch_number, model, graph_dgl, graph_dgl_val, feat_train, feat_val,  targets, sampling_method, is_prior, loss_type, adj_train_org, adj_val_org, norm_feat, pos_weight_feat, norm_feat_val, pos_weight_feat_val, num_nodes, num_nodes_val, pos_wight, norm, pos_wight_val, norm_val,optimizer ):
-    lambda_1, lambda_2 = params
+    lambda_1, lambda_2, lambda_3 = params
     best_auc = 0
     with open('./results_csv/best_auc.csv', newline='') as f:
         reader = csv.DictReader(f)
@@ -448,7 +433,7 @@ def train_model(params, labels_train, labels_val, dataset, epoch_number, model, 
         std_z, m_z, z, reconstructed_adj, reconstructed_feat, re_labels = model(graph_dgl, feat_train, labels_train, targets, sampling_method,
                                                                      is_prior, train=True)
         # compute loss and accuracy
-        z_kl, reconstruction_loss, acc, val_recons_loss, loss_adj, loss_feat = optimizer_VAE_pn(lambda_1, lambda_2, labels_train, re_labels, loss_type, reconstructed_adj,
+        z_kl, reconstruction_loss, acc, val_recons_loss, loss_adj, loss_feat = optimizer_VAE_pn(lambda_1,lambda_2,lambda_3, labels_train, re_labels, loss_type, reconstructed_adj,
                                                                            reconstructed_feat,
                                                                            adj_train_org, feat_train, norm_feat,
                                                                            pos_weight_feat,
@@ -474,43 +459,52 @@ def train_model(params, labels_train, labels_val, dataset, epoch_number, model, 
 
         std_z_val, m_z_val, z_val, reconstructed_adj_val, reconstructed_feat_val, re_labels_val = model(graph_dgl_val, feat_val, labels_val, targets,  sampling_method,
                                                                  is_prior, train=True)
-        z_kl_val, val_reconstruction_loss, val_acc, val_recons_loss, loss_adj, loss_feat = optimizer_VAE_pn(lambda_1, lambda_2, labels_val, re_labels_val, loss_type, reconstructed_adj_val,
+        z_kl_val, val_reconstruction_loss, val_acc, val_recons_loss, loss_adj, loss_feat = optimizer_VAE_pn(lambda_1,lambda_2,lambda_3, labels_val, re_labels_val, loss_type, reconstructed_adj_val,
                                                                        reconstructed_feat_val,
                                                                        adj_val_org, feat_val, norm_feat_val,
                                                                        pos_weight_feat_val,
                                                                        std_z_val, m_z_val, num_nodes_val, pos_wight_val, norm_val)
         val_loss_total = val_reconstruction_loss+z_kl_val
-        with open('./results_csv/loss_val.csv', 'a') as f:
-            wtr = csv.writer(f)
-            wtr.writerow([loss.item()])
+        # with open('./results_csv/loss_val.csv', 'a') as f:
+        #     wtr = csv.writer(f)
+        #     wtr.writerow([loss.item()])
 
-    y_true_feat = (torch.flatten(feat_val)).cpu().detach().numpy()
-    y_pred_feat = (torch.flatten(torch.sigmoid(reconstructed_feat_val))).cpu().detach().numpy()
-    index_sample_0_feat = np.random.choice(np.where(y_true_feat == 1)[0], 100)
-    index_sample_1_feat = np.random.choice(np.where(y_true_feat == 0)[0], 100)
-    index_sample_feat = np.concatenate((index_sample_0_feat, index_sample_1_feat))
-    auc_feat = roc_auc_score(y_score=y_pred_feat[index_sample_feat], y_true=y_true_feat[index_sample_feat])
+    # y_true_feat = (torch.flatten(feat_val)).cpu().detach().numpy()
+    # y_pred_feat = (torch.flatten(torch.sigmoid(reconstructed_feat_val))).cpu().detach().numpy()
+    # index_sample_0_feat = np.random.choice(np.where(y_true_feat == 1)[0], 100)
+    # index_sample_1_feat = np.random.choice(np.where(y_true_feat == 0)[0], 100)
+    # index_sample_feat = np.concatenate((index_sample_0_feat, index_sample_1_feat))
+    # auc_feat = roc_auc_score(y_score=y_pred_feat[index_sample_feat], y_true=y_true_feat[index_sample_feat])
+    #
+    # y_true_adj = (torch.flatten(adj_val_org)).cpu().detach().numpy()
+    # y_pred_adj = (torch.flatten(torch.sigmoid(reconstructed_adj_val))).cpu().detach().numpy()
+    # index_sample_0_adj = np.random.choice(np.where(y_true_adj == 1)[0], 100)
+    # index_sample_1_adj = np.random.choice(np.where(y_true_adj == 0)[0], 100)
+    # index_sample_adj = np.concatenate((index_sample_0_adj, index_sample_1_adj))
+    # auc_adj = roc_auc_score(y_score=y_pred_adj[index_sample_adj], y_true=y_true_adj[index_sample_adj])
+    #
+    # auc_labels = roc_auc_score(y_score= re_labels_val, y_true= labels_val)
 
-    y_true_adj = (torch.flatten(adj_val_org)).cpu().detach().numpy()
-    y_pred_adj = (torch.flatten(torch.sigmoid(reconstructed_adj_val))).cpu().detach().numpy()
-    index_sample_0_adj = np.random.choice(np.where(y_true_adj == 1)[0], 100)
-    index_sample_1_adj = np.random.choice(np.where(y_true_adj == 0)[0], 100)
-    index_sample_adj = np.concatenate((index_sample_0_adj, index_sample_1_adj))
-    auc_adj = roc_auc_score(y_score=y_pred_adj[index_sample_adj], y_true=y_true_adj[index_sample_adj])
+    # auc_val = -1*(auc_feat+auc_adj+auc_labels)
+    # auc_val = -1*(auc_feat + auc_adj)
+    # if best_auc > auc_val:
+    #     best_auc = auc_val
+    #     torch.save(model.state_dict(), 'best_model_' + dataset + '.pt')
+    #     with open('./results_csv/best_auc.csv', 'a') as f:
+    #         wtr = csv.writer(f)
+    #         wtr.writerow([best_auc])
 
-    acc_labels = accuracy_score(y_pred=torch.argmax(re_labels_val,dim = 1), y_true=labels_val, normalize=True)
+    w_l = weight_labels(labels_val)
+    posterior_cost_edges = norm * F.binary_cross_entropy_with_logits(reconstructed_adj_val, adj_val_org, pos_weight=pos_wight_val)
+    posterior_cost_features = norm_feat * F.binary_cross_entropy_with_logits(reconstructed_feat_val , feat_val,
+                                                                             pos_weight=pos_weight_feat)
+    posterior_cost_classes =  F.cross_entropy(re_labels_val,
+                                                                (torch.tensor(labels_val).to(torch.float64)),
+                                                                weight=w_l)
 
-    # auc_val = auc_feat+auc_adj+acc_labels
-    auc_val = -1*(auc_feat + auc_adj)
-    if best_auc < auc_val:
-        best_auc = auc_val
-        torch.save(model.state_dict(), 'best_model_' + dataset + '.pt')
-        with open('./results_csv/best_auc.csv', 'a') as f:
-            wtr = csv.writer(f)
-            wtr.writerow([best_auc])
+    cost = posterior_cost_edges+posterior_cost_features+posterior_cost_classes
 
-    #return -1*(val_loss_total)
-    return val_reconstruction_loss.item()
+    return cost.item()
 
 
 

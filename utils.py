@@ -6,6 +6,7 @@ import math
 
 import csv
 from sklearn.utils import shuffle
+from sklearn.metrics import roc_auc_score, auc, precision_recall_curve
 from sklearn.metrics import f1_score
 from sklearn.metrics import roc_auc_score, accuracy_score, confusion_matrix, average_precision_score, recall_score, \
     precision_score
@@ -21,6 +22,7 @@ from scipy.sparse import lil_matrix
 from scipy import sparse
 import dgl
 from itertools import combinations
+from numpy import argmax
 import torch.distributions as tdist
 from scipy.stats import multivariate_normal
 
@@ -769,44 +771,71 @@ def complete_subgraph_edges(nodes):
     edges.extend([edge[::-1] for edge in edges])  # Add backward edges
     return edges
 # objective Function
-def  optimizer_VAE_pn (lambda_1, lambda_2, true_labels, reconstructed_labels, loss_type, pred, reconstructed_feat, labels, x, norm_feat, pos_weight_feat,  std_z, mean_z, num_nodes, pos_weight, norm):
+def  optimizer_VAE_pn (lambda_1,lambda_2, lambda_3, true_labels, reconstructed_labels, loss_type, pred, reconstructed_feat, labels, x, norm_feat, pos_weight_feat,  std_z, mean_z, num_nodes, pos_weight, norm):
     val_poterior_cost = 0
+    w_l = weight_labels(true_labels)
     posterior_cost_edges = norm * F.binary_cross_entropy_with_logits(pred, labels, pos_weight=pos_weight)
     posterior_cost_features = norm_feat * F.binary_cross_entropy_with_logits(reconstructed_feat, x, pos_weight=pos_weight_feat)
-    #true_labels = torch.nn.functional.one_hot(torch.tensor(true_labels).to(torch.int64), reconstructed_labels.shape[1])
-    posterior_cost_classes = (1/x.shape[0])*F.cross_entropy(reconstructed_labels, torch.tensor(true_labels).to(torch.int64))
+    posterior_cost_classes = F.cross_entropy(reconstructed_labels, (torch.tensor(true_labels).to(torch.float64)), weight=w_l)
     z_kl = (-0.5 / num_nodes) * torch.mean(torch.sum(1 + 2 * torch.log(std_z) - mean_z.pow(2) - (std_z).pow(2), dim=1))
+
+    shape_adj = pred.shape[0]*pred.shape[1]
+    shape_feat = x.shape[0]*x.shape[1]
+    shape_labels = true_labels.shape[0]
+
+    total = shape_adj+shape_feat+shape_labels
 
     acc = (torch.sigmoid(pred).round() == labels).sum() / float(pred.shape[0] * pred.shape[1])
     ones_x = x.nonzero().shape[0]
     ones_adj = labels.nonzero().shape[0]
-
-    if loss_type == "1":
-        posterior_cost = lambda_1 * posterior_cost_edges + lambda_2 * posterior_cost_features
+    if loss_type == "0":
+        posterior_cost = posterior_cost_edges
+    elif loss_type == "1":
+        posterior_cost = lambda_1 * posterior_cost_edges + (1-lambda_1) * posterior_cost_features
     elif loss_type == "2":
-        posterior_cost = lambda_1 * (1 / ones_adj) * posterior_cost_edges + lambda_2 * (1 / ones_x) * posterior_cost_features
+        posterior_cost = lambda_1 * (1 / ones_adj) * posterior_cost_edges + (1-lambda_1) * (1 / ones_x) * posterior_cost_features
     elif loss_type == "3":
-        posterior_cost = lambda_1 * (ones_x / ones_adj) * posterior_cost_edges + lambda_2 * (ones_adj / ones_x) * posterior_cost_features
+        posterior_cost = lambda_1 * (ones_x / ones_adj) * posterior_cost_edges + (1-lambda_1) * (ones_adj / ones_x) * posterior_cost_features
     elif loss_type == "4":
-        posterior_cost = lambda_1 * (1 / (labels.shape[0]*labels.shape[1])) * posterior_cost_edges + lambda_2 * (1 / (x.shape[0]*x.shape[1])) * posterior_cost_features
+        posterior_cost = lambda_1 * (1 / (labels.shape[0]*labels.shape[0])) * posterior_cost_edges + (1-lambda_1) * (1 / (x.shape[0]*x.shape[1])) * posterior_cost_features
     elif loss_type == "5":
-        posterior_cost = posterior_cost_features
+        # posterior_cost = lambda_1 *(1/shape_adj)* posterior_cost_edges + lambda_2 *(1/shape_labels)*posterior_cost_classes + lambda_3 *(1/shape_feat)*posterior_cost_features
+        posterior_cost = (shape_feat/shape_adj)* lambda_1 * posterior_cost_edges + lambda_2 * posterior_cost_classes + (shape_adj/shape_feat     )*lambda_3  * posterior_cost_features
+
     elif loss_type == "6":
-        posterior_cost = lambda_1 * (ones_adj / ones_x) * posterior_cost_edges + lambda_2 * (ones_x / ones_adj) * posterior_cost_features
+        posterior_cost = lambda_1 * (ones_adj / ones_x) * posterior_cost_edges + (1-lambda_1) * (ones_x / ones_adj) * posterior_cost_features
     elif loss_type == "7":
-        posterior_cost = lambda_1 * ((x.shape[0] * x.shape[1]) / (labels.shape[0] * labels.shape[1])) * posterior_cost_edges +  lambda_2 * (
+        posterior_cost = lambda_1 * ((x.shape[0] * x.shape[1]) / (labels.shape[0] * labels.shape[0])) * posterior_cost_edges +  (1-lambda_1) * (
                 (labels.shape[0] * labels.shape[1]) / (x.shape[0] * x.shape[1])) * posterior_cost_features
         # posterior_cost = ((x.shape[0] * x.shape[1]) / (labels.shape[0] * labels.shape[1])) * posterior_cost_edges + (
         #                          (labels.shape[0] * labels.shape[1]) / (x.shape[0] * x.shape[1])) * posterior_cost_features
     elif loss_type == "8":
-        posterior_cost = lambda_1 *((x.shape[0] * x.shape[1]) / (labels.shape[0] * labels.shape[1])) * posterior_cost_edges + lambda_2 *(
+        posterior_cost = lambda_1 *((x.shape[0] * x.shape[1]) / (labels.shape[0] * labels.shape[1])) * posterior_cost_edges + (1-lambda_1) *(
                 (labels.shape[0] * labels.shape[1]) / (x.shape[0] * x.shape[1])) * posterior_cost_features+ posterior_cost_classes
     elif loss_type == "9":
         posterior_cost = posterior_cost_classes
+
     else:
-        posterior_cost = lambda_1 * ((labels.shape[0] * labels.shape[1]) / (x.shape[0] * x.shape[1])) * posterior_cost_edges + lambda_2 * (
+        posterior_cost = lambda_1 * ((labels.shape[0] * labels.shape[1]) / (x.shape[0] * x.shape[1])) * posterior_cost_edges + (1-lambda_1) * (
                 (x.shape[0] * x.shape[1]) / (labels.shape[0] * labels.shape[1])) * posterior_cost_features
     return z_kl, posterior_cost, acc, val_poterior_cost, posterior_cost_edges, posterior_cost_features
+
+def weight_labels(labels):
+    labels = torch.argmax(torch.from_numpy(labels), dim=1)
+    # labels = torch.from_numpy(labels)
+    class_counts = torch.bincount(labels)
+
+    # Calculate the total number of samples
+    total_samples = len(labels)
+
+    # Calculate class frequencies (class_counts / total_samples)
+    class_frequencies = class_counts.float() / total_samples
+
+    # Calculate inverse class frequencies to use as class weights
+    class_weights = 1.0 / class_frequencies
+    class_weights /= class_weights.sum()
+    return class_weights
+
 
 def optimizer_VAE_em(alpha, Y_index, E_index, pred, reconstructed_feat, labels, x,  norm_feat,pos_weight_feat,std_z, mean_z, num_nodes, pos_weight_Y, pos_weight_E, norm_Y, norm_E ):
 
@@ -849,15 +878,21 @@ def roc_auc_estimator(target_edges, reconstructed_adj, origianl_agjacency):
         prediction.append(reconstructed_adj[edge[1], edge[0]])
         true_label.append(origianl_agjacency[edge[0], edge[1]])
         true_label.append(origianl_agjacency[edge[1], edge[0]])
-
     pred = np.array(prediction)
-    pred[pred > .5] = 1.0
-    pred[pred < .5] = 0.0
+
+    precision, recall, thresholds = precision_recall_curve(true_label, pred)
+    fscore = (2 * precision * recall) / (precision + recall)
+    ix = argmax(fscore)
+    Threshold = thresholds[ix]
+
+
+    pred[pred > Threshold] = 1.0
+    pred[pred < Threshold] = 0.0
     pred = pred.astype(int)
 
 
-    precision = precision_score(y_pred=pred, y_true=true_label)
-    recall = recall_score(y_pred=pred, y_true=true_label)
+    # precision = precision_score(y_pred=pred, y_true=true_label)
+    # recall = recall_score(y_pred=pred, y_true=true_label)
     auc = roc_auc_score(y_score=prediction, y_true=true_label)
     acc = accuracy_score(y_pred=pred, y_true=true_label, normalize=True)
     ap = average_precision_score(y_score=prediction, y_true=true_label)
@@ -915,65 +950,47 @@ def roc_auc_estimator_feat(target_index_id, target_node_id, reconstructed_feat, 
     return auc, acc, ap, precision, recall, HR, cll
 
 
-def roc_auc_estimator_labels(targets, re_labels, labels):
+def roc_auc_estimator_labels(re_labels, labels):
     prediction = []
     true_label = []
 
-    for node in targets:
-        prediction.append(torch.argmax(re_labels[node]).item())
-        true_label.append(labels[node])
+    for i in range(len(labels)):
+        prediction.append(re_labels[i].detach().numpy())
+        true_label.append(labels[i].detach().numpy())
+    prediction = np.array(prediction)
+    true_label = np.array(true_label)
+
+    pred = prediction
+    pred[pred > .5] = 1.0
+    pred[pred < .5] = 0.0
+    pred = pred.astype(int)
+
+    precision = precision_score(y_pred=pred, y_true=true_label, average="weighted")
+    recall = recall_score(y_pred=pred, y_true=true_label, average="weighted")
 
 
-    # pred = np.array(prediction)
-    # pred[pred > .5] = 1.0
-    # pred[pred < .5] = 0.0
-    # pred = pred.astype(int)
-
-    precision = precision_score(y_pred=prediction, y_true=true_label, average="weighted")
-    recall = recall_score(y_pred=prediction, y_true=true_label,  average="weighted")
-    # auc = roc_auc_score(y_score=prediction, y_true=true_label)
-    acc = accuracy_score(y_pred=prediction, y_true=true_label, normalize=True)
-    # ap = average_precision_score(y_score=prediction, y_true=true_label,  average="weighted")
-    # cof_mtx = confusion_matrix(y_true=true_label, y_pred=prediction)
     roc_auc_scores = []
-    for class_index in np.unique(true_label):
-        binary_true_labels = (true_label == class_index).astype(int)
-        binary_predicted_probs = (prediction == class_index).astype(int)
-        try:
-            roc_auc_scores.append(roc_auc_score(binary_true_labels, binary_predicted_probs))
-        except ValueError:
-            # Handle the case where there's only one class in the prediction vector
-            roc_auc_scores.append(np.nan)
 
-    # Compute AP for each class
-    avg_precisions = []
-    for class_index in np.unique(true_label):
-        binary_true_labels = (true_label == class_index).astype(int)
-        binary_predicted_probs = (prediction == class_index).astype(int)
-        try:
-            avg_precisions.append(average_precision_score(binary_true_labels, binary_predicted_probs))
-        except ValueError:
-            # Handle the case where there's only one class in the prediction vector
-            avg_precisions.append(np.nan)
+    num_classes = true_label.shape[1]  # Number of classes
 
-    # Compute the mean AUC and mean AP across classes that are present in both true_labels and prediction_vector
-    auc = np.nanmean(roc_auc_scores)
-    ap = np.nanmean(avg_precisions)
+    for i in range(num_classes):
+        # Calculate ROC-AUC for each class
+        y_true = torch.from_numpy(true_label[:, i])
+        y_pred = torch.from_numpy(prediction[:, i])
+        y_true = torch.cat([y_true, torch.tensor([0])])
+        y_pred = torch.cat([y_pred, torch.tensor([0])])
+        if len(y_true.nonzero())>0:
+            roc_auc = roc_auc_score(y_true, y_pred)
+            roc_auc_scores.append(roc_auc)
 
-    hr_ind = np.argpartition(np.array(prediction), -1 * len(prediction) // 5)[-1 * len(prediction) // 5:]
-    HR = precision_score(y_pred=np.array(prediction)[hr_ind], y_true=np.array(true_label)[hr_ind],  average="weighted")
+    average_roc_auc = sum(roc_auc_scores) / num_classes
 
-    pred = np.array(prediction)
 
-    q_multi = []
-    # with open('./results_csv/results_CLL.csv', newline='') as f:
-    #     reader = csv.DictReader(f)
-    #     for q in reader:
-    #         q_multi.append(float(q['q'])
-    #                        )
-    # cll = np.log(np.array(q_multi))
-    cll = 0
-    return auc, acc, ap, precision, recall, HR, cll
+    acc = accuracy_score(y_pred=pred, y_true=true_label)
+    ap = average_precision_score(y_score=prediction, y_true=true_label)
+
+    f1_score_macro = f1_score(torch.argmax(torch.from_numpy(true_label), dim=1), torch.argmax(torch.from_numpy(prediction), dim=1), average='macro')
+    return average_roc_auc, acc, ap, precision, recall, f1_score_macro
 
 def roc_auc_estimator_train(pos_edges, negative_edges, reconstructed_adj, origianl_agjacency):
     prediction = []
@@ -1024,7 +1041,7 @@ def roc_auc_single(prediction, true_label, is_feature=False):
     pred = np.array(prediction)
     cll = np.log((np.concatenate((pred[np.array(true_label) == 1], 1-pred[np.array(true_label) == 0]))))
     
-    return auc, acc, ap, precision, recall, HR, cll
+    return auc, acc, ap, precision, recall, HR
 
 
 # def mask_test_edges(adj, testId, trainId):

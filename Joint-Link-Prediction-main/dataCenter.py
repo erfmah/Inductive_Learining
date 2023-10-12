@@ -15,7 +15,6 @@ import numpy as np
 import pickle as pkl
 import scipy.sparse as sp
 import networkx as nx
-from sklearn.preprocessing import OneHotEncoder
 import torch
 import json
 import pickle
@@ -55,13 +54,11 @@ class DataCenter():
             features= np.load("./datasets/" + dataSet + "/x.npy")
             adj = np.load("./datasets/" + dataSet + "/adj.npy")
 
-            labels = np.asarray(labels, dtype=np.int64)
-            test_indexs, val_indexs, train_indexs = self._split_data(labels)
-            encoder = OneHotEncoder(sparse=False)
-            numerical_classes = labels.reshape(-1, 1)
-            labels = encoder.fit_transform(numerical_classes)
+            # labels = np.load("/localhome/pnaddaf/Desktop/parmis/inductive_learning/" + dataSet + "/labels.npy")
+            # features= np.load("/localhome/pnaddaf/Desktop/parmis/inductive_learning/" + dataSet + "/features.npy")
+            # adj = np.load("/localhome/pnaddaf/Desktop/parmis/inductive_learning/" + dataSet + "/adj.npy")
 
-        # test_indexs, val_indexs, train_indexs = self._split_data(labels)
+            test_indexs, val_indexs, train_indexs = self._split_data(features.shape[0])
 
             setattr(self, dataSet+'_test', test_indexs)
             setattr(self, dataSet+'_val', val_indexs)
@@ -204,11 +201,8 @@ class DataCenter():
                     labels.append(label_map[info[-1]])
             feat_data = np.asarray(feat_data)
             labels = np.asarray(labels, dtype=np.int64)
-            test_indexs, val_indexs, train_indexs = self._split_data(labels)
-            encoder = OneHotEncoder(sparse=False)
-            numerical_classes = labels.reshape(-1, 1)
-            labels = encoder.fit_transform(numerical_classes)
 
+            test_indexs, val_indexs, train_indexs = self._split_data(feat_data.shape[0])
 
             setattr(self, dataSet+'_test', test_indexs)
             setattr(self, dataSet+'_val', val_indexs)
@@ -384,50 +378,16 @@ class DataCenter():
 
 
 
-    def _split_data(self, labels, test_split = 0.2, val_split = 0.1):
-        num_nodes = labels.shape[0]
-        num_classes = len(np.unique(labels))
-        nodes_dict = {}
-        for i in range(0, num_nodes):
-            nodes = nodes_dict.get(labels[i], [])
-            nodes.append(i)
-            nodes_dict[labels[i]] = nodes
+    def _split_data(self, num_nodes, test_split = 0.2, val_split = 0.1):
+        np.random.seed(123)
+        rand_indices = np.random.permutation(num_nodes)
 
-        for i in range(0, num_classes):
-            nodes = nodes_dict[i]
-            nodes = np.random.permutation(nodes)
-            nodes_dict[i] = nodes
-        test_size_o = int(num_nodes * test_split)
-        val_size_o = int(num_nodes * val_split)
-        train_size_o = num_nodes - (test_size_o + val_size_o)
-        test_size = int(test_size_o/num_classes)
-        val_size = int(val_size_o/num_classes)
-        train_size = int(train_size_o/num_classes)
-        test_indexs = np.array([])
-        val_indexs = np.array([])
-        train_indexs = np.array([])
+        test_size = int(num_nodes * test_split)
+        val_size = int(num_nodes * val_split)
+        train_size = num_nodes - (test_size + val_size)
 
-        for i in range(0, num_classes):
-            test_indexs = np.concatenate((test_indexs, nodes_dict[i][:test_size]))
-            val_indexs  = np.concatenate((val_indexs,nodes_dict[i][test_size:(test_size + val_size)]))
-            train_indexs= np.concatenate((train_indexs, nodes_dict[i][(test_size+val_size):]))
-
-        test_indexs = test_indexs.astype('int32')
-        val_indexs = val_indexs.astype('int32')
-        train_indexs = train_indexs.astype('int32')
+        test_indexs = rand_indices[:test_size]
+        val_indexs = rand_indices[test_size:(test_size+val_size)]
+        train_indexs = rand_indices[(test_size+val_size):]
 
         return test_indexs, val_indexs, train_indexs
-
-
-        # np.random.seed(123)
-        # rand_indices = np.random.permutation(num_nodes)
-        #
-        # test_size = int(num_nodes * test_split)
-        # val_size = int(num_nodes * val_split)
-        # train_size = num_nodes - (test_size + val_size)
-        #
-        # test_indexs = rand_indices[:test_size]
-        # val_indexs = rand_indices[test_size:(test_size+val_size)]
-        # train_indexs = rand_indices[(test_size+val_size):]
-        #
-        # return test_indexs, val_indexs, train_indexs

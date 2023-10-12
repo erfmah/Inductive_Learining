@@ -11,6 +11,7 @@ from dgl.nn.pytorch import GATConv as GATConv
 from dgl.nn import GINEConv
 from dgl.nn import RelGraphConv
 from dgl.nn import GatedGraphConv
+from dgl.nn import GINConv as GINConv
 from torch.autograd import Variable
 from torch.nn import init
 import time
@@ -655,12 +656,13 @@ class multi_layer_GIN(torch.nn.Module):
         layers = [in_feature] + layers
         if len(layers) < 1: raise Exception("sorry, you need at least two layer")
         self.ConvLayers = torch.nn.ModuleList(
-            GINConv(th.nn.Linear(in_feature, latent_dim), 'max') for i in
+            GINConv(torch.nn.Linear(in_feature, latent_dim), 'max') for i in
             range(len(layers) - 1))
 
-        self.q_z_mean = GINConv(th.nn.Linear(in_feature, latent_dim), 'max')
+        self.q_z_mean = GINConv(torch.nn.Linear(in_feature, latent_dim), 'max')
 
-        self.q_z_std = GINConv(th.nn.Linear(in_feature, latent_dim), 'max')
+        self.q_z_std = GINConv(torch.nn.Linear(in_feature, latent_dim), 'max')
+        self.generate_z = feature_decoder_nn(latent_dim ,latent_dim)
 
     def forward(self, adj, x):
         dropout = torch.nn.Dropout(0)
@@ -672,6 +674,7 @@ class multi_layer_GIN(torch.nn.Module):
         std_q_z = torch.relu(self.q_z_std(adj, x)) + .0001
 
         z = self.reparameterize(m_q_z, std_q_z)
+        z = self.generate_z(z)
         return z, m_q_z, std_q_z,
 
     def reparameterize(self, mean, std):
@@ -1561,107 +1564,54 @@ class PN_FrameWork(torch.nn.Module):
         return std_z, m_z, z, generated_adj, generated_feat, generated_classes
 
     def run_monte(self, generated_adj, x, adj, targets):
-        # if we use Monte Carlo sampling
-        #print("Monte karlo \u2764")
-        
-        
         # make edge list from the ends of the target nodes
         targets = np.array(targets)
-        target_node = np.array([targets[-1]] * targets.shape[0]) 
+        target_node = np.array([targets[-1]] * targets.shape[0])
         target_edges = np.stack((targets, target_node), axis=1)[:-1]
-        
+
         s = generated_adj
-        
-        generated_adj_sig = torch.sigmoid(generated_adj)
-        p_pos = (generated_adj_sig[np.transpose(target_edges[:len(target_edges)//2])]).detach().numpy()
-        p_neg = (1-generated_adj_sig[np.transpose(target_edges[len(target_edges)//2:])]).detach().numpy()
-        cll = np.e ** (np.sum(np.log(np.concatenate((p_pos, p_neg)))))
-        sum_cll = cll
-        # with open('./results_csv/results_CLL.csv', 'w', newline="\n") as f:
-        #     writer = csv.writer(f)
-        #     writer.writerow([cll.item()])
         num_it = 30
         for i in range(num_it - 1):
             z_0 = self.get_z(x, self.latent_dim)  # attribute encoder
             z, m_z, std_z = self.inference(adj, z_0)
-            z = self.dropout(z)
             generated_adj = self.generator(z)
-            generated_adj_sig = torch.sigmoid(generated_adj)
-            p_pos = (generated_adj_sig[np.transpose(target_edges[:len(target_edges)//2])]).detach().numpy()
-            p_neg = (1-generated_adj_sig[np.transpose(target_edges[len(target_edges)//2:])]).detach().numpy()
-            cll = np.e ** (np.sum(np.log(np.concatenate((p_pos, p_neg)))))
-      
-            sum_cll += cll
-            # with open('./results_csv/results_CLL.csv', 'w', newline="\n") as f:
-            #     writer = csv.writer(f)
-            #     writer.writerow([cll])
             s += generated_adj
-            
-            
+
         generated_adj = s / num_it
-        avg_cll = sum_cll/num_it
-        with open('./results_csv/results_CLL.csv', 'a', newline="\n") as f:
-            writer = csv.writer(f)
-            writer.writerow(['average:',avg_cll])
-        #cll = cll / num_it
-        #print(cll)
 
         return generated_adj
 
     def run_importance_sampling(self, generated_adj, x, adj, targets):
 
-        # if important sampling
-        # print("Importance sampling")
         targets = np.array(targets)
-        target_node = np.array([targets[-1]] * targets.shape[0]) 
+        target_node = np.array([targets[-1]] * targets.shape[0])
         target_edges = np.stack((targets, target_node), axis=1)[:-1]
-        
+
         s = generated_adj
-        
-        generated_adj_sig = torch.sigmoid(generated_adj)
-        p_pos = (generated_adj_sig[np.transpose(target_edges[:len(target_edges)//2])]).detach().numpy()
-        p_neg = (1-generated_adj_sig[np.transpose(target_edges[len(target_edges)//2:])]).detach().numpy()
-        cll = np.e ** (np.sum(np.log(np.concatenate((p_pos, p_neg)))))
-        sum_cll = cll
         num_it = 30
         for i in range(num_it - 1):
-
             z_s = self.reparameterize(self.mq, self.sq)
 
             # get z from prior
             z_0 = self.get_z(x, self.latent_dim)  # attribute encoder
             z, m_z, std_z = self.inference(adj, z_0)  # link encoder
 
-
             prior_pdf, recog_pdf = get_pdf(m_z, std_z, self.mq, self.sq, z_s, targets)
 
             coefficient = torch.tensor(prior_pdf - recog_pdf)
 
-            # KLD SANITY
-            # kld, kld_eye, sanity = self.kld_d(m_z, std_z, self.mq, self.sq)
-
             generated_adj = self.generator(z_s)
-            
-            generated_adj_sig = torch.sigmoid(generated_adj)
-            p_pos = (generated_adj_sig[np.transpose(target_edges[:len(target_edges)//2])]).detach().numpy()
-            p_neg = (1-generated_adj_sig[np.transpose(target_edges[len(target_edges)//2:])]).detach().numpy()
-            cll = np.e ** (np.sum(np.log(np.concatenate((p_pos, p_neg)))))
-            sum_cll += cll
 
-            # print("generated_adj_org: ", generated_adj)
             log_generated_adj = torch.log(torch.sigmoid(generated_adj))
-            # print("generated_adj_log: ", log_generated_adj)
+
             log_generated_adj_added = torch.add(log_generated_adj, coefficient)
-            # print("generated_adj_add: ", log_generated_adj_added)
-            generated_adj_final = torch.exp(log_generated_adj)
-            # print(len(generated_adj_final[generated_adj_final>0]))
-            # print("generated_adj_final: ", generated_adj_final)
+
+            generated_adj_final = torch.exp(log_generated_adj_added)
+
             s += generated_adj_final
+
         generated_adj = s / num_it
-        avg_cll = sum_cll/num_it
-        with open('./results_csv/results_CLL.csv', 'a', newline="\n") as f:
-            writer = csv.writer(f)
-            writer.writerow(['average:',avg_cll])
+
         return generated_adj
 
     def kld_d(self, m0, s0, m1, s1):

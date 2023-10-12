@@ -42,13 +42,14 @@ warnings.simplefilter('ignore')
 
 
 parser = argparse.ArgumentParser(description='Inductive')
-parser.add_argument('--dataSet', type=str, default='computers')
-parser.add_argument('-e', dest="epoch_number", default=100, help="Number of Epochs")
+parser.add_argument('--dataSet', type=str, default='cora')
+parser.add_argument('-e', dest="epoch_number", default=10, help="Number of Epochs")
 parser.add_argument('-mask', dest="mask", default=0, help="mask with this value during testing")
 parser.add_argument('--alpha', dest="alpha", default=0, help="alpha in objective function")
-parser.add_argument('--encoder_type', dest="encoder_type", default="Multi_GAT",
+parser.add_argument('--encoder_type', dest="encoder_type", default="Multi_GIN",
                     help="the encoder type, Multi_GCN, Multi_GAT, Multi_GatedGraphConv, Multi_RelGraphConv")
-parser.add_argument('--loss_type', dest="loss_type", default="7", help="type of combination between loss_A and loss_F")
+parser.add_argument('--loss_type', dest="loss_type", default="8", help="type of combination between loss_A and loss_F")
+
 parser.add_argument('--b', dest="b", default='1', help="boundry for hyperparametrs")
 parser.add_argument('--c', dest="c", default='1', help="number of run")
 parser.add_argument('--l', dest="l", default='1', help="percentage in test edges to mask")
@@ -88,8 +89,8 @@ parser.add_argument('-targets', dest="targets", default=[], help="This list is u
 parser.add_argument('--disjoint_transductive_inductive', dest="disjoint_transductive_inductive", default=True,
                     help="This flag is used if want to have dijoint transductive and inductive sets")
 parser.add_argument('--sampling_method', dest="sampling_method", default="deterministic", help="This var shows sampling method it could be: monte, importance_sampling, deterministic, normalized ")
-parser.add_argument('--method', dest="method", default="multi", help="This var shows method it could be: multi, single, subgraph")
-
+parser.add_argument('--method', dest="method", default="single", help="This var shows method it could be: multi, single, subgraph")
+parser.add_argument('--query_type', dest="query_type", default="class", help="This var shows method it could be: link, node class, both")
 
 
 args_kdd = parser.parse_args()
@@ -108,6 +109,7 @@ else:
 
 print("")
 print("SETING: " + str(args_kdd))
+
 
 
 
@@ -275,6 +277,8 @@ else:
     save_recons_adj_name = save_recons_adj_name + str(l)+"_"+'multi_link_'+ds
 
 
+query_type = args_kdd.query_type
+
 
 pred_single_link = []
 true_single_link = []
@@ -352,31 +356,36 @@ for i in sample_list:
         counter += 1
         if single_link:
             #print(idd, neighbour_id)
+
+
             adj_list_copy = copy.deepcopy(org_adj)
             feat_list_copy = copy.deepcopy(features_kdd)
-            adj_list_copy[idd, neighbour_id] = 0 # find a test edge and set it to 0
-            adj_list_copy[neighbour_id, idd] = 0  # find a test edge and set it to 0
+            if query_type == "link" or query_type == "both":
+                adj_list_copy[idd, neighbour_id] = 0 # find a test edge and set it to 0
+                adj_list_copy[neighbour_id, idd] = 0  # find a test edge and set it to 0
 
             #setting feature to 0 and sampling equal number of 1s and 0s
-            feat_ones = np.argwhere(feat_list_copy[idd] == 1).tolist()[0]
-            target_feat_1.extend(feat_ones)
-            feat_zero = np.argwhere(feat_list_copy[idd] == 0)
-            zero_feat_index = np.random.choice(feat_zero[0], len(feat_list_copy[idd].nonzero())).tolist()
-            target_feat_1.extend(zero_feat_index)
-            feat_list_copy[idd, target_feat_1] = mask
+            # feat_ones = np.argwhere(feat_list_copy[idd] == 1).tolist()[0]
+            # target_feat_1.extend(feat_ones)
+            # feat_zero = np.argwhere(feat_list_copy[idd] == 0)
+            # zero_feat_index = np.random.choice(feat_zero[0], len(feat_list_copy[idd].nonzero())).tolist()
+            # target_feat_1.extend(zero_feat_index)
+            # feat_list_copy[idd, target_feat_1] = mask
+            # feat_list_copy[idd, target_feat_1] = feat_list_copy[idd, target_feat_1]
 
-            target_feat_index_node.append(target_feat_1)
-            target_feat_node_id.append(idd)
+            # target_feat_index_node.append(target_feat_1)
+            # target_feat_node_id.append(idd)
 
             #second node of the edge
 
-            feat_ones = np.argwhere(feat_list_copy[neighbour_id] == 1).tolist()[0]
-            target_feat_2.extend(feat_ones)
-            feat_zero = np.argwhere(feat_list_copy[neighbour_id] == 0)
-            zero_feat_index = np.random.choice(feat_zero[0], len(feat_list_copy[neighbour_id].nonzero())).tolist()
-            target_feat_2.extend(zero_feat_index)
-            feat_list_copy[neighbour_id, target_feat_2] = mask
-            target_feat_index_node.append(target_feat_2)
+            # feat_ones = np.argwhere(feat_list_copy[neighbour_id] == 1).tolist()[0]
+            # target_feat_2.extend(feat_ones)
+            # feat_zero = np.argwhere(feat_list_copy[neighbour_id] == 0)
+            # zero_feat_index = np.random.choice(feat_zero[0], len(feat_list_copy[neighbour_id].nonzero())).tolist()
+            # target_feat_2.extend(zero_feat_index)
+            # feat_list_copy[neighbour_id, target_feat_2] = mask
+            # feat_list_copy[neighbour_id, target_feat_2] =feat_list_copy[neighbour_id, target_feat_2]
+            # target_feat_index_node.append(target_feat_2)
 
             # target_feat_node_id.append(neighbour_id)
 
@@ -385,7 +394,7 @@ for i in sample_list:
             targets.append(neighbour_id)
 
             test_adj = torch.zeros(adj_list_copy.shape[0],adj_list_copy.shape[0])
-            std_z_prior, m_z_prior, z_prior, re_adj_prior, re_feat_prior, re_prior_labels = run_network(feat_list_copy, test_adj, labels, inductive_pn,
+            std_z_prior, m_z_prior, z_prior, re_adj_prior, re_feat_prior, re_prior_labels = run_network(features_kdd, test_adj, labels, inductive_pn,
                                                                         targets, sampling_method,  is_prior=True)
             if prior_only:
                 CVAE = CVAE_loss(m_z_prior, m_z_prior, std_z_prior, std_z_prior, re_adj_prior.detach().numpy(), org_adj,
@@ -402,9 +411,9 @@ for i in sample_list:
             # true_single_link.append(org_adj[id_neg, neighbour_id_neg].tolist())
             # true_feat_single_link.append(features_kdd[idd].tolist())
             #torch.save(re_adj_prior, './output_csv/'+save_recons_adj_name+'/'+save_recons_adj_name_i+'.pt')
-            auc_feat, val_acc_feat, val_ap_feat, precision_feat, recall_feat, HR_feat, CLL_feat = roc_auc_estimator_feat(target_feat_index_node, target_feat_node_id,
-                                                                                                                         re_feat_prior_sig,
-                                                                                                                         features_kdd)
+            # auc_feat, val_acc_feat, val_ap_feat, precision_feat, recall_feat, HR_feat, CLL_feat = roc_auc_estimator_feat(target_feat_index_node, target_feat_node_id,
+            #                                                                                                              re_feat_prior_sig,
+            #                                                                                                              features_kdd)
             auc_labels, val_acc_labels, val_ap_labels, precision_labels, recall_labels, HR_labels, CLL_labels = roc_auc_estimator_labels(targets, re_prior_labels, labels)
 
             auc_list_labels_single.append(auc_labels)
@@ -415,13 +424,13 @@ for i in sample_list:
             HR_list_labels_single.append(HR_labels)
             CLL_list_labels_single.append(CLL_labels)
 
-            auc_list_feat_single.append(auc_feat)
-            val_acc_list_feat_single.append(val_acc_feat)
-            val_ap_list_feat_single.append(val_ap_feat)
-            precision_list_feat_single.append(precision_feat)
-            recall_list_feat_single.append(recall_feat)
-            HR_list_feat_single.append(HR_feat)
-            CLL_list_feat_single.append(CLL_feat)
+            # auc_list_feat_single.append(auc_feat)
+            # val_acc_list_feat_single.append(val_acc_feat)
+            # val_ap_list_feat_single.append(val_ap_feat)
+            # precision_list_feat_single.append(precision_feat)
+            # recall_list_feat_single.append(recall_feat)
+            # HR_list_feat_single.append(HR_feat)
+            # CLL_list_feat_single.append(CLL_feat)
 
 
 
@@ -680,131 +689,131 @@ for i in sample_list:
             HR_list_multi_single.append(HR)
             CLL_list_multi.append(CLL)
 
-if single_link:
-    # false_count = len(pred_single_link)
-    # res = np.argwhere(org_adj == 0)
-    # np.random.shuffle(res)
-    # index = np.where(np.isin(res[:, 0], testId))  # only one node of the 2 ends of an edge needs to be in testId
-    # test_neg_edges = res[index]
-    #
-    # for test_neg_edge in test_neg_edges[:false_count]:
-    #     targets = []
-    #     idd = test_neg_edge[0]
-    #     neighbour_id = test_neg_edge[1]
-    #     adj_list_copy = copy.deepcopy(org_adj)
-    #     adj_list_copy[idd, neighbour_id] = 0
-    #     adj_list_copy[neighbour_id, idd] = 0
-    #
-    #     targets.append(idd)
-    #     targets.append(neighbour_id)
-    #
-    #     std_z_prior, m_z_prior, z_prior, re_adj_prior, reconstructed_feat = run_network(features_kdd, adj_list_copy, inductive_pn,
-    #                                                                 targets, sampling_method,  is_prior=True)
-    # re_adj_prior_sig = torch.sigmoid(re_adj_prior)
-    # pred_single_link.append(re_adj_prior_sig[idd, neighbour_id].tolist())
-    # true_single_link.append(org_adj[idd, neighbour_id].tolist())
-    #
-    #
-    #
-    #
-    # auc, val_acc, val_ap, precision, recall, HR, CLL = roc_auc_single(pred_single_link, true_single_link)
-    # auc_list_single.append(auc)
-    # val_acc_list_single.append(val_acc)
-    # val_ap_list_single.append(val_ap)
-    # precision_list_single.append(precision)
-    # recall_list_single.append(recall)
-    # HR_list_single.append(HR)
-    # CLL_list_single.append(CLL)
-    false_count = len(pred_single_link)
-    res = np.argwhere(org_adj == 0)
-    np.random.shuffle(res)
-    index = np.where(np.isin(res[:, 0], testId))  # only one node of the 2 ends of an edge needs to be in testId
-    test_neg_edges = res[index]
-    re_adj_recog_sig = torch.sigmoid(re_adj_recog)
-    #adding feature prediction
-    neg_edges = test_neg_edges[:false_count]
-    counter = 100
-    for idd, neighbour_id in neg_edges:
-        print(counter)
-        counter += 1
-        adj_list_copy = copy.deepcopy(org_adj)
-        feat_list_copy = copy.deepcopy(features_kdd)
-
-        # setting feature to 0 and sampling equal number of 1s and 0s
-        feat_ones = np.argwhere(feat_list_copy[idd] == 1).tolist()[0]
-        target_feat_1.extend(feat_ones)
-        feat_zero = np.argwhere(feat_list_copy[idd] == 0)
-        zero_feat_index = np.random.choice(feat_zero[0], len(feat_list_copy[idd].nonzero())).tolist()
-        target_feat_1.extend(zero_feat_index)
-        feat_list_copy[idd, target_feat_1] = mask
-
-
-        target_feat_index_node.append(target_feat_1)
-        target_feat_node_id.append(idd)
-
-        #for the second node of the edge
-
-        feat_ones = np.argwhere(feat_list_copy[neighbour_id] == 1).tolist()[0]
-        target_feat_2.extend(feat_ones)
-        feat_zero = np.argwhere(feat_list_copy[neighbour_id] == 0)
-        zero_feat_index = np.random.choice(feat_zero[0], len(feat_list_copy[neighbour_id].nonzero())).tolist()
-        target_feat_2.extend(zero_feat_index)
-        feat_list_copy[neighbour_id, target_feat_2] = mask
-        target_feat_index_node.append(target_feat_2)
-
-        target_feat_node_id.append(neighbour_id)
-
-        # end of setting features to 0
-
-        #for important sampling
-        targets.append(idd)
-        targets.append(neighbour_id)
-        std_z_prior, m_z_prior, z_prior, re_adj_prior, re_feat_prior, re_prior_labels = run_network(feat_list_copy, adj_list_copy, labels,
-                                                                                   inductive_pn,
-                                                                                   targets, sampling_method,
-                                                                                   is_prior=True)
-        re_adj_prior_sig = torch.sigmoid(re_adj_prior)
-        re_feat_prior_sig = torch.sigmoid(re_feat_prior)
-        pred_single_link.append(re_adj_prior_sig[idd, neighbour_id].tolist())
-        true_single_link.append(org_adj[idd, neighbour_id].tolist())
-
-        auc_feat, val_acc_feat, val_ap_feat, precision_feat, recall_feat, HR_feat, CLL_feat = roc_auc_estimator_feat(
-            target_feat_index_node, target_feat_node_id,
-            re_feat_prior_sig,
-            features_kdd)
-
-        auc_labels, val_acc_labels, val_ap_labels, precision_labels, recall_labels, HR_labels, CLL_labels = roc_auc_estimator_labels(
-            targets, re_prior_labels, labels)
-
-        auc_list_labels_single.append(auc_labels)
-        val_acc_list_labels_single.append(val_acc_labels)
-        val_ap_list_labels_single.append(val_ap_labels)
-        precision_list_labels_single.append(precision_labels)
-        recall_list_labels_single.append(recall_labels)
-        HR_list_labels_single.append(HR_labels)
-        CLL_list_labels_single.append(CLL_labels)
-
-
-        auc_list_feat_single.append(auc_feat)
-        val_acc_list_feat_single.append(val_acc_feat)
-        val_ap_list_feat_single.append(val_ap_feat)
-        precision_list_feat_single.append(precision_feat)
-        recall_list_feat_single.append(recall_feat)
-        HR_list_feat_single.append(HR_feat)
-        CLL_list_feat_single.append(CLL_feat)
-
-    #end of feature predictoin
-
-
-    auc, val_acc, val_ap, precision, recall, HR, CLL = roc_auc_single(pred_single_link, true_single_link)
-    # auc_feat, val_acc_feat, val_ap_feat, precision_feat, recall_feat, HR_feat, CLL_feat = get_metrices(target_feat, pred_feat_single_link, true_feat_single_link)
-    auc_list_single.append(auc)
-    val_acc_list_single.append(val_acc)
-    val_ap_list_single.append(val_ap)
-    precision_list_single.append(precision)
-    recall_list_single.append(recall)
-    HR_list_single.append(HR)
-    CLL_list_single.append(CLL)
+# if single_link:
+#     # false_count = len(pred_single_link)
+#     # res = np.argwhere(org_adj == 0)
+#     # np.random.shuffle(res)
+#     # index = np.where(np.isin(res[:, 0], testId))  # only one node of the 2 ends of an edge needs to be in testId
+#     # test_neg_edges = res[index]
+#     #
+#     # for test_neg_edge in test_neg_edges[:false_count]:
+#     #     targets = []
+#     #     idd = test_neg_edge[0]
+#     #     neighbour_id = test_neg_edge[1]
+#     #     adj_list_copy = copy.deepcopy(org_adj)
+#     #     adj_list_copy[idd, neighbour_id] = 0
+#     #     adj_list_copy[neighbour_id, idd] = 0
+#     #
+#     #     targets.append(idd)
+#     #     targets.append(neighbour_id)
+#     #
+#     #     std_z_prior, m_z_prior, z_prior, re_adj_prior, reconstructed_feat = run_network(features_kdd, adj_list_copy, inductive_pn,
+#     #                                                                 targets, sampling_method,  is_prior=True)
+#     # re_adj_prior_sig = torch.sigmoid(re_adj_prior)
+#     # pred_single_link.append(re_adj_prior_sig[idd, neighbour_id].tolist())
+#     # true_single_link.append(org_adj[idd, neighbour_id].tolist())
+#     #
+#     #
+#     #
+#     #
+#     # auc, val_acc, val_ap, precision, recall, HR, CLL = roc_auc_single(pred_single_link, true_single_link)
+#     # auc_list_single.append(auc)
+#     # val_acc_list_single.append(val_acc)
+#     # val_ap_list_single.append(val_ap)
+#     # precision_list_single.append(precision)
+#     # recall_list_single.append(recall)
+#     # HR_list_single.append(HR)
+#     # CLL_list_single.append(CLL)
+#     false_count = len(pred_single_link)
+#     res = np.argwhere(org_adj == 0)
+#     np.random.shuffle(res)
+#     index = np.where(np.isin(res[:, 0], testId))  # only one node of the 2 ends of an edge needs to be in testId
+#     test_neg_edges = res[index]
+#     re_adj_recog_sig = torch.sigmoid(re_adj_recog)
+#     #adding feature prediction
+#     neg_edges = test_neg_edges[:false_count]
+#     counter = 100
+#     for idd, neighbour_id in neg_edges:
+#         print(counter)
+#         counter += 1
+#         adj_list_copy = copy.deepcopy(org_adj)
+#         feat_list_copy = copy.deepcopy(features_kdd)
+#
+#         # setting feature to 0 and sampling equal number of 1s and 0s
+#         feat_ones = np.argwhere(feat_list_copy[idd] == 1).tolist()[0]
+#         target_feat_1.extend(feat_ones)
+#         feat_zero = np.argwhere(feat_list_copy[idd] == 0)
+#         zero_feat_index = np.random.choice(feat_zero[0], len(feat_list_copy[idd].nonzero())).tolist()
+#         target_feat_1.extend(zero_feat_index)
+#         feat_list_copy[idd, target_feat_1] = mask
+#
+#
+#         target_feat_index_node.append(target_feat_1)
+#         target_feat_node_id.append(idd)
+#
+#         #for the second node of the edge
+#
+#         feat_ones = np.argwhere(feat_list_copy[neighbour_id] == 1).tolist()[0]
+#         target_feat_2.extend(feat_ones)
+#         feat_zero = np.argwhere(feat_list_copy[neighbour_id] == 0)
+#         zero_feat_index = np.random.choice(feat_zero[0], len(feat_list_copy[neighbour_id].nonzero())).tolist()
+#         target_feat_2.extend(zero_feat_index)
+#         feat_list_copy[neighbour_id, target_feat_2] = mask
+#         target_feat_index_node.append(target_feat_2)
+#
+#         target_feat_node_id.append(neighbour_id)
+#
+#         # end of setting features to 0
+#
+#         #for important sampling
+#         targets.append(idd)
+#         targets.append(neighbour_id)
+#         std_z_prior, m_z_prior, z_prior, re_adj_prior, re_feat_prior, re_prior_labels = run_network(feat_list_copy, adj_list_copy, labels,
+#                                                                                    inductive_pn,
+#                                                                                    targets, sampling_method,
+#                                                                                    is_prior=True)
+#         re_adj_prior_sig = torch.sigmoid(re_adj_prior)
+#         re_feat_prior_sig = torch.sigmoid(re_feat_prior)
+#         pred_single_link.append(re_adj_prior_sig[idd, neighbour_id].tolist())
+#         true_single_link.append(org_adj[idd, neighbour_id].tolist())
+#
+#         auc_feat, val_acc_feat, val_ap_feat, precision_feat, recall_feat, HR_feat, CLL_feat = roc_auc_estimator_feat(
+#             target_feat_index_node, target_feat_node_id,
+#             re_feat_prior_sig,
+#             features_kdd)
+#
+#         auc_labels, val_acc_labels, val_ap_labels, precision_labels, recall_labels, HR_labels, CLL_labels = roc_auc_estimator_labels(
+#             targets, re_prior_labels, labels)
+#
+#         auc_list_labels_single.append(auc_labels)
+#         val_acc_list_labels_single.append(val_acc_labels)
+#         val_ap_list_labels_single.append(val_ap_labels)
+#         precision_list_labels_single.append(precision_labels)
+#         recall_list_labels_single.append(recall_labels)
+#         HR_list_labels_single.append(HR_labels)
+#         CLL_list_labels_single.append(CLL_labels)
+#
+#
+#         auc_list_feat_single.append(auc_feat)
+#         val_acc_list_feat_single.append(val_acc_feat)
+#         val_ap_list_feat_single.append(val_ap_feat)
+#         precision_list_feat_single.append(precision_feat)
+#         recall_list_feat_single.append(recall_feat)
+#         HR_list_feat_single.append(HR_feat)
+#         CLL_list_feat_single.append(CLL_feat)
+#
+#     #end of feature predictoin
+#
+#
+#     auc, val_acc, val_ap, precision, recall, HR, CLL = roc_auc_single(pred_single_link, true_single_link)
+#     # auc_feat, val_acc_feat, val_ap_feat, precision_feat, recall_feat, HR_feat, CLL_feat = get_metrices(target_feat, pred_feat_single_link, true_feat_single_link)
+#     auc_list_single.append(auc)
+#     val_acc_list_single.append(val_acc)
+#     val_ap_list_single.append(val_ap)
+#     precision_list_single.append(precision)
+#     recall_list_single.append(recall)
+#     HR_list_single.append(HR)
+#     CLL_list_single.append(CLL)
 
 
 
@@ -847,6 +856,15 @@ if single_link:
 #     precision_list_multi.append(precision)
 #     recall_list_multi.append(recall)
 #     HR_list_multi.append(HR)
+if single_link:
+    auc, val_acc, val_ap, precision, recall, HR, CLL = roc_auc_single(pred_single_link, true_single_link)
+    auc_list_single.append(auc)
+    val_acc_list_single.append(val_acc)
+    val_ap_list_single.append(val_ap)
+    precision_list_single.append(precision)
+    recall_list_single.append(recall)
+    HR_list_single.append(HR)
+    CLL_list_single.append(CLL)
 
 # Print results
 print(save_recons_adj_name)
@@ -995,14 +1013,6 @@ if single_link:
     HR_mean_single = statistics.mean(HR_list_single)
     CLL_mean_single = np.mean(CLL_list_single)
 
-    auc_mean_feat_single = statistics.mean(auc_list_feat_single)
-    val_acc_mean_feat_single = statistics.mean(val_acc_list_feat_single)
-    val_ap_mean_feat_single = statistics.mean(val_ap_list_feat_single)
-    precision_mean_feat_single = statistics.mean(precision_list_feat_single)
-    recall_mean_feat_single = statistics.mean(recall_list_feat_single)
-    HR_mean_feat_single = statistics.mean(HR_list_feat_single)
-    #CLL_mean_feat_single = np.mean(CLL_list_feat_single)
-    CLL_mean_feat_single = []
 
     auc_mean_labels_single = statistics.mean(auc_list_labels_single)
     val_acc_mean_labels_single = statistics.mean(val_acc_list_labels_single)
@@ -1016,9 +1026,9 @@ if single_link:
     with open('./results_csv/results.csv', 'a', newline="\n") as f:
         writer = csv.writer(f)
         writer.writerow([save_recons_adj_name,auc_mean_single,val_acc_mean_single,val_ap_mean_single,precision_mean_single,recall_mean_single,HR_mean_single,CLL_mean_single])
-    with open('./results_csv/results.csv', 'a', newline="\n") as f:
-        writer = csv.writer(f)
-        writer.writerow(["feat_"+save_recons_adj_name,auc_mean_feat_single,val_acc_mean_feat_single,val_ap_mean_feat_single,precision_mean_feat_single,recall_mean_feat_single,HR_mean_feat_single,CLL_mean_feat_single])
+    # with open('./results_csv/results.csv', 'a', newline="\n") as f:
+    #     writer = csv.writer(f)
+    #     writer.writerow(["feat_"+save_recons_adj_name,auc_mean_feat_single,val_acc_mean_feat_single,val_ap_mean_feat_single,precision_mean_feat_single,recall_mean_feat_single,HR_mean_feat_single,CLL_mean_feat_single])
     with open('./results_csv/results.csv', 'a', newline="\n") as f:
         writer = csv.writer(f)
         writer.writerow(["labels_" + save_recons_adj_name, auc_mean_labels_single, val_acc_mean_labels_single, val_ap_mean_labels_single,
