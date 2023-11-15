@@ -1534,10 +1534,12 @@ class PN_FrameWork(torch.nn.Module):
 
                 #if we use deterministic
                 elif sampling_method=='monte':
-                    generated_adj = self.run_monte(generated_adj, x, adj, targets)
+                    generated_adj = self.run_monte(generated_adj, x, adj, targets, "adj")
+                    generated_classes = self.run_monte(generated_classes, x, adj, targets, "class")
                     
                 elif sampling_method == 'importance_sampling':
-                    generated_adj = self.run_importance_sampling(generated_adj, x, adj, targets)
+                    generated_adj = self.run_importance_sampling(generated_adj, x, adj, targets, "adj")
+                    generated_classes = self.run_importance_sampling(generated_classes, x, adj, targets, "class")
                     
                 else:
                     targets = np.array(targets)
@@ -1563,32 +1565,35 @@ class PN_FrameWork(torch.nn.Module):
 
         return std_z, m_z, z, generated_adj, generated_feat, generated_classes
 
-    def run_monte(self, generated_adj, x, adj, targets):
+    def run_monte(self, generated, x, adj, targets, type):
         # make edge list from the ends of the target nodes
         targets = np.array(targets)
         target_node = np.array([targets[-1]] * targets.shape[0])
         target_edges = np.stack((targets, target_node), axis=1)[:-1]
 
-        s = generated_adj
+        s = generated
         num_it = 30
         for i in range(num_it - 1):
             z_0 = self.get_z(x, self.latent_dim)  # attribute encoder
             z, m_z, std_z = self.inference(adj, z_0)
-            generated_adj = self.generator(z)
-            s += generated_adj
+            if type=="adj":
+                generated = self.generator(z)
+            else:
+                generated = self.classifier(z)
+            s += generated
 
-        generated_adj = s / num_it
+        generated = s / num_it
 
-        return generated_adj
+        return generated
 
-    def run_importance_sampling(self, generated_adj, x, adj, targets):
+    def run_importance_sampling(self, generated, x, adj, targets, type):
 
         targets = np.array(targets)
         target_node = np.array([targets[-1]] * targets.shape[0])
         target_edges = np.stack((targets, target_node), axis=1)[:-1]
 
-        s = generated_adj
-        num_it = 30
+        s = generated
+        num_it = 10
         for i in range(num_it - 1):
             z_s = self.reparameterize(self.mq, self.sq)
 
@@ -1599,20 +1604,22 @@ class PN_FrameWork(torch.nn.Module):
             prior_pdf, recog_pdf = get_pdf(m_z, std_z, self.mq, self.sq, z_s, targets)
 
             coefficient = torch.tensor(prior_pdf - recog_pdf)
+            if type=="adj":
+                generated = self.generator(z_s)
+            else:
+                generated = self.classifier(z)
 
-            generated_adj = self.generator(z_s)
+            log_generated = torch.log(torch.sigmoid(generated))
 
-            log_generated_adj = torch.log(torch.sigmoid(generated_adj))
+            log_generated_added = torch.add(log_generated, coefficient)
 
-            log_generated_adj_added = torch.add(log_generated_adj, coefficient)
+            generated_final = torch.exp(log_generated_added)
 
-            generated_adj_final = torch.exp(log_generated_adj_added)
+            s += generated_final
 
-            s += generated_adj_final
+        generated = s / num_it
 
-        generated_adj = s / num_it
-
-        return generated_adj
+        return generated
 
     def kld_d(self, m0, s0, m1, s1):
 

@@ -475,7 +475,7 @@ def train_model(params, labels_train, labels_val, dataset, epoch_number, model, 
     # index_sample_1_feat = np.random.choice(np.where(y_true_feat == 0)[0], 100)
     # index_sample_feat = np.concatenate((index_sample_0_feat, index_sample_1_feat))
     # auc_feat = roc_auc_score(y_score=y_pred_feat[index_sample_feat], y_true=y_true_feat[index_sample_feat])
-    #
+
     # y_true_adj = (torch.flatten(adj_val_org)).cpu().detach().numpy()
     # y_pred_adj = (torch.flatten(torch.sigmoid(reconstructed_adj_val))).cpu().detach().numpy()
     # index_sample_0_adj = np.random.choice(np.where(y_true_adj == 1)[0], 100)
@@ -484,23 +484,25 @@ def train_model(params, labels_train, labels_val, dataset, epoch_number, model, 
     # auc_adj = roc_auc_score(y_score=y_pred_adj[index_sample_adj], y_true=y_true_adj[index_sample_adj])
     #
     # auc_labels = roc_auc_score(y_score= re_labels_val, y_true= labels_val)
-
+    #
     # auc_val = -1*(auc_feat+auc_adj+auc_labels)
-    # auc_val = -1*(auc_feat + auc_adj)
+    #
     # if best_auc > auc_val:
     #     best_auc = auc_val
     #     torch.save(model.state_dict(), 'best_model_' + dataset + '.pt')
     #     with open('./results_csv/best_auc.csv', 'a') as f:
     #         wtr = csv.writer(f)
     #         wtr.writerow([best_auc])
+    #
+    #
+    #
+    # return auc_val
 
     w_l = weight_labels(labels_val)
     posterior_cost_edges = norm * F.binary_cross_entropy_with_logits(reconstructed_adj_val, adj_val_org, pos_weight=pos_wight_val)
     posterior_cost_features = norm_feat * F.binary_cross_entropy_with_logits(reconstructed_feat_val , feat_val,
                                                                              pos_weight=pos_weight_feat)
-    posterior_cost_classes =  F.cross_entropy(re_labels_val,
-                                                                (torch.tensor(labels_val).to(torch.float64)),
-                                                                weight=w_l)
+    posterior_cost_classes =  F.cross_entropy(re_labels_val,(torch.tensor(labels_val).to(torch.float64)),weight=w_l)
 
     cost = posterior_cost_edges+posterior_cost_features+posterior_cost_classes
 

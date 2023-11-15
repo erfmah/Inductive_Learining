@@ -44,7 +44,7 @@ warnings.simplefilter('ignore')
 
 
 parser = argparse.ArgumentParser(description='Inductive')
-parser.add_argument('--dataSet', type=str, default='photos')
+parser.add_argument('--dataSet', type=str, default='Cora')
 parser.add_argument('-e', dest="epoch_number", default=100 , help="Number of Epochs")
 parser.add_argument('-mask', dest="mask", default=0, help="mask with this value during testing")
 parser.add_argument('--alpha', dest="alpha", default=0, help="alpha in objective function")
@@ -90,7 +90,7 @@ parser.add_argument('-is_prior', dest="is_prior", default=False, help="This flag
 parser.add_argument('-targets', dest="targets", default=[], help="This list is used for sampling")
 parser.add_argument('--fully_inductive', dest="fully_inductive", default=False,
                     help="This flag is used if want to have dijoint transductive and inductive sets")
-parser.add_argument('--sampling_method', dest="sampling_method", default="importance_sampling ", help="This var shows sampling method it could be: monte, importance_sampling, deterministic, normalized ")
+parser.add_argument('--sampling_method', dest="sampling_method", default="importance_sampling", help="This var shows sampling method it could be: monte, importance_sampling, deterministic, normalized ")
 parser.add_argument('--method', dest="method", default="single", help="This var shows method it could be: multi, single, subgraph")
 parser.add_argument('--query_type', dest="query_type", default="class", help="This var shows method it could be: link, node class, both")
 

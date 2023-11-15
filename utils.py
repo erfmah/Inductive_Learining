@@ -777,6 +777,7 @@ def  optimizer_VAE_pn (lambda_1,lambda_2, lambda_3, true_labels, reconstructed_l
     posterior_cost_edges = norm * F.binary_cross_entropy_with_logits(pred, labels, pos_weight=pos_weight)
     posterior_cost_features = norm_feat * F.binary_cross_entropy_with_logits(reconstructed_feat, x, pos_weight=pos_weight_feat)
     posterior_cost_classes = F.cross_entropy(reconstructed_labels, (torch.tensor(true_labels).to(torch.float64)), weight=w_l)
+    # posterior_cost_classes = F.cross_entropy(reconstructed_labels, (torch.tensor(true_labels).to(torch.float64)))
     z_kl = (-0.5 / num_nodes) * torch.mean(torch.sum(1 + 2 * torch.log(std_z) - mean_z.pow(2) - (std_z).pow(2), dim=1))
 
     shape_adj = pred.shape[0]*pred.shape[1]
@@ -800,7 +801,8 @@ def  optimizer_VAE_pn (lambda_1,lambda_2, lambda_3, true_labels, reconstructed_l
         posterior_cost = lambda_1 * (1 / (labels.shape[0]*labels.shape[0])) * posterior_cost_edges + (1-lambda_1) * (1 / (x.shape[0]*x.shape[1])) * posterior_cost_features
     elif loss_type == "5":
         # posterior_cost = lambda_1 *(1/shape_adj)* posterior_cost_edges + lambda_2 *(1/shape_labels)*posterior_cost_classes + lambda_3 *(1/shape_feat)*posterior_cost_features
-        posterior_cost = (shape_feat/shape_adj)* lambda_1 * posterior_cost_edges + lambda_2 * posterior_cost_classes + (shape_adj/shape_feat     )*lambda_3  * posterior_cost_features
+        posterior_cost = lambda_1 * (shape_feat/shape_adj) * posterior_cost_edges + lambda_2 * posterior_cost_classes + (shape_adj / shape_feat) * lambda_3 * posterior_cost_features
+        # posterior_cost = posterior_cost_edges + posterior_cost_classes + posterior_cost_features
 
     elif loss_type == "6":
         posterior_cost = lambda_1 * (ones_adj / ones_x) * posterior_cost_edges + (1-lambda_1) * (ones_x / ones_adj) * posterior_cost_features

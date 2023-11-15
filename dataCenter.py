@@ -393,41 +393,78 @@ class DataCenter():
 
 
     def _split_data(self, labels, test_split = 0.2, val_split = 0.1):
+        # np.random.seed(123)
         num_nodes = labels.shape[0]
         num_classes = len(np.unique(labels))
         nodes_dict = {}
+        #create dict for each class
         for i in range(0, num_nodes):
             nodes = nodes_dict.get(labels[i], [])
             nodes.append(i)
+            # nodes = np.random.permutation(nodes)
             nodes_dict[labels[i]] = nodes
 
-        for i in range(0, num_classes):
-            nodes = nodes_dict[i]
-            nodes = np.random.permutation(nodes)
-            nodes_dict[i] = nodes
-        test_size_o = int(num_nodes * test_split)
-        val_size_o = int(num_nodes * val_split)
-        train_size_o = num_nodes - (test_size_o + val_size_o)
-        test_size = int(test_size_o/num_classes)
-        val_size = int(val_size_o/num_classes)
-        train_size = int(train_size_o/num_classes)
+        # for i in range(0, num_classes):
+        #     nodes = nodes_dict[i]
+        #     nodes = np.random.permutation(nodes)
+        #     nodes_dict[i] = nodes
+
         test_indexs = np.array([])
         val_indexs = np.array([])
         train_indexs = np.array([])
 
+
         for i in range(0, num_classes):
-            test_indexs = np.concatenate((test_indexs, nodes_dict[i][:test_size]))
-            val_indexs  = np.concatenate((val_indexs,nodes_dict[i][test_size:(test_size + val_size)]))
-            train_indexs= np.concatenate((train_indexs, nodes_dict[i][(test_size+val_size):]))
+            n_nodes = len(nodes_dict[i])
+            number_test = int(n_nodes*test_split)
+            number_val = int(n_nodes*val_split)
+
+            test_indexs = np.concatenate((test_indexs, nodes_dict[i][:number_test]))
+            val_indexs  = np.concatenate((val_indexs,nodes_dict[i][number_test:(number_test + number_val)]))
+            train_indexs= np.concatenate((train_indexs, nodes_dict[i][(number_test+number_val):]))
 
         test_indexs = test_indexs.astype('int32')
         val_indexs = val_indexs.astype('int32')
         train_indexs = train_indexs.astype('int32')
 
+
+
+        nodes_dict_val = {}
+        nodes_dict_te = {}
+        nodes_dict_tr = {}
+        for i in range(0, len(test_indexs)):
+            nodes = nodes_dict_te.get(labels[test_indexs[i]], [])
+            nodes.append(i)
+            nodes_dict_te[labels[test_indexs[i]]] = nodes
+
+
+        for i in range(0, len(val_indexs)):
+            nodes = nodes_dict_val.get(labels[val_indexs[i]], [])
+            nodes.append(i)
+            nodes_dict_val[labels[val_indexs[i]]] = nodes
+
+        for i in range(0, len(train_indexs)):
+            nodes = nodes_dict_tr.get(labels[train_indexs[i]], [])
+            nodes.append(i)
+            nodes_dict_tr[labels[train_indexs[i]]] = nodes
+
+
         return test_indexs, val_indexs, train_indexs
 
 
         # np.random.seed(123)
+        # num_nodes = labels.shape[0]
+        # num_classes = len(np.unique(labels))
+        # nodes_dict = {}
+        # for i in range(0, num_nodes):
+        #     nodes = nodes_dict.get(labels[i], [])
+        #     nodes.append(i)
+        #     nodes_dict[labels[i]] = nodes
+        #
+        # for i in range(0, num_classes):
+        #     nodes = nodes_dict[i]
+        #     # nodes = np.random.permutation(nodes)
+        #     nodes_dict[i] = nodes
         # rand_indices = np.random.permutation(num_nodes)
         #
         # test_size = int(num_nodes * test_split)
@@ -437,5 +474,35 @@ class DataCenter():
         # test_indexs = rand_indices[:test_size]
         # val_indexs = rand_indices[test_size:(test_size+val_size)]
         # train_indexs = rand_indices[(test_size+val_size):]
+        #
+        # for i in range(0, num_classes):
+        #     print(i, len(nodes_dict[i]))
+        #
+        # nodes_dict_val = {}
+        # nodes_dict_te = {}
+        # nodes_dict_tr = {}
+        # for i in range(0, len(test_indexs)):
+        #     nodes = nodes_dict_te.get(labels[test_indexs[i]], [])
+        #     nodes.append(i)
+        #     nodes_dict_te[labels[test_indexs[i]]] = nodes
+        # print("test")
+        # for i in range(0, num_classes):
+        #     print(i, len(nodes_dict_te[i]))
+        #
+        # for i in range(0, len(val_indexs)):
+        #     nodes = nodes_dict_val.get(labels[val_indexs[i]], [])
+        #     nodes.append(i)
+        #     nodes_dict_val[labels[val_indexs[i]]] = nodes
+        # print("val")
+        # for i in range(0, num_classes):
+        #     print(i, len(nodes_dict_val[i]))
+        #
+        # for i in range(0, len(train_indexs)):
+        #     nodes = nodes_dict_tr.get(labels[train_indexs[i]], [])
+        #     nodes.append(i)
+        #     nodes_dict_tr[labels[train_indexs[i]]] = nodes
+        # print("train")
+        # for i in range(0, num_classes):
+        #     print(i, len(nodes_dict_tr[i]))
         #
         # return test_indexs, val_indexs, train_indexs
